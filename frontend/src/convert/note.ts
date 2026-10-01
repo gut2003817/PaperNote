@@ -20,7 +20,7 @@ const VEGA_VIEW_KEYS = ["mark", "layer", "concat", "hconcat", "vconcat", "facet"
 
 const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
 const str = (v: unknown) => (typeof v === "string" ? v : "");
-const round1 = (v: number) => Math.round(v * 10) / 10;
+const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
 export function layoutToProps(l?: Layout) {
   const x = { ...DEFAULT_LAYOUT, ...l };
@@ -29,9 +29,14 @@ export function layoutToProps(l?: Layout) {
 
 export function propsToLayout(p: Record<string, unknown>): Layout {
   const align = (["left", "center", "right"].includes(p.align as string) ? p.align : "center") as Align;
-  const l: Layout = { widthPct: num(p.widthPct, 100), marginTopPx: num(p.marginTopPx, 8), marginBottomPx: num(p.marginBottomPx, 8), align };
+  const l: Layout = {
+    widthPct: clamp(num(p.widthPct, 100), 10, 100),
+    marginTopPx: clamp(num(p.marginTopPx, 8), 0, 200),
+    marginBottomPx: clamp(num(p.marginBottomPx, 8), 0, 200),
+    align,
+  };
   const h = num(p.heightPx, 0);
-  if (h > 0) l.heightPx = h;
+  if (h > 0) l.heightPx = clamp(h, 50, 2000);
   return l;
 }
 
@@ -107,9 +112,12 @@ function bnToLeaf(b: BNBlock): LeafBlock | null {
     }
     case "diagram":
       return withLayout({ id, type: "diagram", mermaid: str(p.mermaid).trim() ? str(p.mermaid) : DEFAULT_MERMAID }, p);
-    case "figure":
-      if (!str(p.path)) return null;
-      return withLayout({ id, type: "figure", path: str(p.path), caption: str(p.caption), page: Math.max(1, num(p.page, 1)) }, p);
+    case "figure": {
+      const path = str(p.path);
+      // 比對完整檔名；$ 也可能匹配結尾換行之前的位置。
+      if (path.match(/^[\w.-]+\.png$/)?.[0] !== path) return null;
+      return withLayout({ id, type: "figure", path, caption: str(p.caption), page: Math.max(1, num(p.page, 1)) }, p);
+    }
     case "whiteboard":
       return withLayout({ id, type: "whiteboard", scene: parseObj(p.scene) ?? { elements: [] } }, p);
     default:
@@ -139,9 +147,15 @@ function toColumns(b: BNBlock): NoteBlock[] {
     .filter((c) => c.leaves.length > 0);
   if (cols.length < 2 || cols.length > 3) return cols.flatMap((c) => c.leaves);
   const total = cols.reduce((s, c) => s + c.width, 0);
-  const widths = cols.map((c) => Math.min(90, Math.max(10, round1((c.width / total) * 100))));
-  widths[widths.length - 1] = round1(100 - widths.slice(0, -1).reduce((s, w) => s + w, 0));
-  const columns: Column[] = cols.map((c, i) => ({ widthPct: widths[i], blocks: c.leaves }));
+  // 用 0.1% 的整數單位分配差額，避免補足總和時讓任何一欄超出範圍。
+  const widths = cols.map((c) => clamp(Math.round((c.width / total) * 1000), 100, 900));
+  let remaining = 1000 - widths.reduce((sum, width) => sum + width, 0);
+  for (let i = widths.length - 1; i >= 0 && remaining !== 0; i--) {
+    const adjustment = clamp(remaining, 100 - widths[i], 900 - widths[i]);
+    widths[i] += adjustment;
+    remaining -= adjustment;
+  }
+  const columns: Column[] = cols.map((c, i) => ({ widthPct: widths[i] / 10, blocks: c.leaves }));
   return [{ id: b.id ?? "", type: "columns", columns }];
 }
 

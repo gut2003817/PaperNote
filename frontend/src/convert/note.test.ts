@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { inlineToMarkdown, markdownToInline } from "./inline";
-import { DEFAULT_CHART_SPEC, editorToNote, noteToEditor, type BNBlock } from "./note";
+import { DEFAULT_CHART_SPEC, DEFAULT_LAYOUT, editorToNote, noteToEditor, propsToLayout, type BNBlock } from "./note";
 import { SAMPLE_NOTE } from "./fixtures";
 
 describe("inline", () => {
@@ -35,6 +35,54 @@ describe("note <-> editor", () => {
     ] }];
     const note = editorToNote(blocks);
     expect(note.blocks[0]).toMatchObject({ type: "columns", columns: [{ widthPct: 25 }, { widthPct: 75 }] });
+  });
+
+  it.each([
+    [85, 5, 10],
+    [1, 1, 98],
+    [1, 99],
+    [1, 1, 1],
+  ])("欄寬 %j 轉換後每欄符合範圍且總和為 100", (...widths: number[]) => {
+    const note = editorToNote([{ id: "L", type: "columnList", children: widths.map((width, i) => ({
+      type: "column", props: { width },
+      children: [{ id: `p${i}`, type: "paragraph", content: markdownToInline(`欄 ${i}`) }],
+    })) }]);
+    const block = note.blocks[0];
+    expect(block.type).toBe("columns");
+    if (block.type !== "columns") throw new Error("預期保留 columns");
+    expect(block.columns).toHaveLength(widths.length);
+    const converted = block.columns.map((column) => column.widthPct);
+    for (const width of converted) {
+      expect(width).toBeGreaterThanOrEqual(10);
+      expect(width).toBeLessThanOrEqual(90);
+      expect(width).toBeCloseTo(Math.round(width * 10) / 10, 10);
+    }
+    const total = converted.reduce((sum, width) => sum + width, 0);
+    expect(total).toBeGreaterThanOrEqual(99);
+    expect(total).toBeLessThanOrEqual(101);
+    expect(total).toBeCloseTo(100, 10);
+  });
+
+  it.each([
+    [{ widthPct: 1, heightPx: 1, marginTopPx: -10, marginBottomPx: 300 },
+      { widthPct: 10, heightPx: 50, marginTopPx: 0, marginBottomPx: 200, align: "center" }],
+    [{ widthPct: 120, heightPx: 3000, marginTopPx: 300, marginBottomPx: -10 },
+      { widthPct: 100, heightPx: 2000, marginTopPx: 200, marginBottomPx: 0, align: "center" }],
+  ])("layout 數值夾到後端範圍：%j", (props, expected) => {
+    expect(propsToLayout(props)).toEqual(expected);
+    expect(editorToNote([{ id: "d", type: "diagram", props: { mermaid: "flowchart LR; A-->B", ...props } }]).blocks[0])
+      .toMatchObject({ layout: expected });
+  });
+
+  it("layout 保留合法數值，heightPx 0 表示自動且不輸出", () => {
+    expect(propsToLayout({ widthPct: 60, heightPx: 300, marginTopPx: 0, marginBottomPx: 200, align: "left" }))
+      .toEqual({ widthPct: 60, heightPx: 300, marginTopPx: 0, marginBottomPx: 200, align: "left" });
+    expect(propsToLayout({ heightPx: 0 })).toEqual(DEFAULT_LAYOUT);
+    expect(propsToLayout({ heightPx: 0 })).not.toHaveProperty("heightPx");
+  });
+
+  it.each(["../x.png", "images/x.png", "x.jpg", "x.png\n"])("figure path %j 不符合檔名規則時丟棄", (path) => {
+    expect(editorToNote([{ id: "f", type: "figure", props: { path, caption: "", page: 1 } }]).blocks).toEqual([]);
   });
 
   it("只剩一欄有內容時攤平", () => {
