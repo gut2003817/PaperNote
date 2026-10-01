@@ -18,7 +18,7 @@ export function HealthLight() {
           <span key={engine} title={h.ok ? h.detail : `${h.detail}；修復：${h.fix ?? ""}`}>
             <span className={`health-dot ${h.ok ? "ok" : "bad"}`} />
             {engine === "claude" ? "Claude" : "Codex"}
-            {!h.ok && `（${h.detail}）`}
+            {!h.ok && `（${h.detail}${h.fix ? `：${h.fix}` : ""}）`}
           </span>
         );
       })}

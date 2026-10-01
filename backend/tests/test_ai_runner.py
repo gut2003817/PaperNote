@@ -60,3 +60,25 @@ def test_check_engine_missing(monkeypatch, tmp_path):
     monkeypatch.setenv("PAPER_NOTES_CODEX_BIN", str(tmp_path / "nope"))
     res = check_engine("codex")
     assert res["ok"] is False and "找不到" in res["detail"]
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_run_non_executable_binary_raises_ai_error(tmp_path, monkeypatch, engine):
+    binary = tmp_path / engine
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o600)
+    monkeypatch.setenv(f"PAPER_NOTES_{engine.upper()}_BIN", str(binary))
+    with pytest.raises(AIError, match=f"{engine} CLI.*執行權限"):
+        run(engine, "x", SCHEMA, tmp_path)
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_check_engine_non_executable_binary(tmp_path, monkeypatch, engine):
+    binary = tmp_path / engine
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o600)
+    monkeypatch.setenv(f"PAPER_NOTES_{engine.upper()}_BIN", str(binary))
+    result = check_engine(engine)
+    assert result["ok"] is False
+    assert engine in result["detail"] and "執行權限" in result["detail"]
+    assert result["fix"] and "chmod +x" in result["fix"]

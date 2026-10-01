@@ -23,7 +23,8 @@ export function ChatPanel({ slug, selection, editorRef }: Props) {
 
   const send = async () => {
     const editor = editorRef.current;
-    const text = message.trim();
+    const originalMessage = message;
+    const text = originalMessage.trim();
     if (!editor || !selection || !text || busy) return;
     const sel = selection;
     setBusy(true);
@@ -40,6 +41,7 @@ export function ChatPanel({ slug, selection, editorRef }: Props) {
       if (res.replace) editor.applyReplace(sel.blockIds, res.replace);
       push({ role: "assistant", text: res.reply, engine, snapshot: res.snapshot });
     } catch (e) {
+      setMessage(originalMessage);
       push({ role: "error", text: (e as Error).message, raw: e instanceof ApiError ? e.raw : null });
     } finally {
       if (locked) editor.setLocked(false);

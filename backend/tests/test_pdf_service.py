@@ -41,3 +41,26 @@ def test_encrypted_pdf_raises_pdf_error(tmp_path):
     doc.save(tmp_path / "enc.pdf", encryption=fitz.PDF_ENCRYPT_AES_256, user_pw="pw", owner_pw="pw")
     with pytest.raises(PdfError, match="密碼"):
         extract_figures(tmp_path / "enc.pdf", tmp_path / "figures")
+
+
+def test_bad_embedded_image_does_not_prevent_page_render(tmp_path, monkeypatch):
+    pdf = make_sample_pdf(tmp_path / "s.pdf")
+    with fitz.open(pdf) as doc:
+        bad_xref = doc[0].get_images(full=True)[0][0]
+    original = fitz.Pixmap
+    attempted = []
+
+    def pixmap(*args, **kwargs):
+        if len(args) == 2 and isinstance(args[0], fitz.Document):
+            attempted.append(args[1])
+            if args[1] == bad_xref:
+                raise RuntimeError("broken embedded image")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(fitz, "Pixmap", pixmap)
+    figs = extract_figures(pdf, tmp_path / "figures")
+    assert bad_xref in attempted
+    assert len(attempted) == 2, "仍需繼續處理下一張圖"
+    assert "p1-1.png" not in [f.file for f in figs]
+    assert "page-1.png" in [f.file for f in figs]
+    assert (tmp_path / "figures" / "page-1.png").stat().st_size > 0

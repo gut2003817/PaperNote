@@ -13,6 +13,9 @@ export function PaperView({ slug }: { slug: string }) {
 
   useEffect(() => {
     setNote(null);
+    setSelection(null);
+    setError(null);
+    setSaveError(null);
     api
       .note(slug)
       .then(setNote)

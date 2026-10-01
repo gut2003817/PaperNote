@@ -34,6 +34,20 @@ async function send(text: string) {
 }
 
 describe("ChatPanel", () => {
+  it.each(["edit", "flush"] as const)("送出 %s 失敗後保留原訊息，可直接重送", async (failure) => {
+    const { ref, handle } = fakeEditor();
+    const edit = vi.spyOn(api, "edit").mockResolvedValue({ reply: "成功", replace: null, snapshot: null });
+    if (failure === "edit") edit.mockRejectedValueOnce(new Error("失敗"));
+    else vi.mocked(handle.flush).mockRejectedValueOnce(new Error("失敗"));
+    render(<ChatPanel slug="s" selection={selection} editorRef={ref} />);
+    await send("  改白話  ");
+    await screen.findByText("失敗");
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("  改白話  ");
+    expect((screen.getByRole("button", { name: /送出/ }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /送出/ }));
+    await screen.findByText("成功");
+  });
+
   it("修改：flush → lock → edit → unlock → apply，並顯示回覆與還原按鈕", async () => {
     const { ref, handle, calls } = fakeEditor();
     const edit = vi.spyOn(api, "edit").mockResolvedValue({

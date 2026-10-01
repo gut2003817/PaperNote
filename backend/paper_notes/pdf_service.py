@@ -38,14 +38,17 @@ def extract_figures(pdf_path: Path, out_dir: Path, min_side: int = 120,
                 if xref in seen:
                     continue
                 seen.add(xref)
-                pix = fitz.Pixmap(doc, xref)
-                if pix.width < min_side or pix.height < min_side:
+                try:
+                    pix = fitz.Pixmap(doc, xref)
+                    if pix.width < min_side or pix.height < min_side:
+                        continue
+                    if pix.n - pix.alpha >= 4:
+                        pix = fitz.Pixmap(fitz.csRGB, pix)
+                    name = f"p{pno}-{i}.png"
+                    pix.save(out_dir / name)
+                    figures.append(FigureInfo(name, pno, "embedded", pix.width, pix.height))
+                except Exception:
                     continue
-                if pix.n - pix.alpha >= 4:
-                    pix = fitz.Pixmap(fitz.csRGB, pix)
-                name = f"p{pno}-{i}.png"
-                pix.save(out_dir / name)
-                figures.append(FigureInfo(name, pno, "embedded", pix.width, pix.height))
             render = page.get_pixmap(matrix=fitz.Matrix(page_zoom, page_zoom))
             name = f"page-{pno}.png"
             render.save(out_dir / name)

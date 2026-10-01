@@ -78,6 +78,7 @@ function leafToBN(b: LeafBlock): BNBlock {
 }
 
 export function noteToEditor(note: Note): BNBlock[] {
+  if (note.blocks.length === 0) return [{ type: "paragraph" }];
   return note.blocks.map((b) =>
     b.type === "columns"
       ? {

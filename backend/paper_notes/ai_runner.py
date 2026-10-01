@@ -53,6 +53,8 @@ def run(engine: Engine, prompt: str, schema: dict, workdir: Path,
                                   cwd=workdir, timeout=timeout)
         except FileNotFoundError:
             raise AIError(f"找不到 {engine} CLI，請確認已安裝並在 PATH 上") from None
+        except PermissionError:
+            raise AIError(f"{engine} CLI 沒有執行權限，請修復執行權限（chmod +x）或重新安裝") from None
         except subprocess.TimeoutExpired:
             raise AIError(f"{engine} 超過 {timeout} 秒未完成，已中止") from None
         if engine == "claude":
@@ -95,6 +97,9 @@ def check_engine(engine: Engine) -> dict:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
     except FileNotFoundError:
         return {"ok": False, "detail": f"找不到 {engine} CLI", "fix": f"安裝 {engine} 並確認在 PATH 上"}
+    except PermissionError:
+        return {"ok": False, "detail": f"{engine} CLI 沒有執行權限",
+                "fix": f"在終端機以 chmod +x 修復 {engine} CLI 的執行權限，或重新安裝 {engine}"}
     except subprocess.TimeoutExpired:
         return {"ok": False, "detail": f"{engine} 狀態檢查逾時", "fix": fix}
     logged_in = proc.returncode == 0

@@ -19,6 +19,10 @@ describe("inline", () => {
 });
 
 describe("note <-> editor", () => {
+  it("空筆記提供一個段落", () => {
+    expect(noteToEditor({ blocks: [] })).toEqual([{ type: "paragraph" }]);
+  });
+
   it("SAMPLE_NOTE 來回轉換完全相同", () => {
     expect(editorToNote(noteToEditor(SAMPLE_NOTE))).toEqual(SAMPLE_NOTE);
   });

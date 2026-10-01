@@ -11,6 +11,12 @@ import { editorToNote, noteToEditor, type BNBlock } from "../convert/note";
 import { SAMPLE_NOTE } from "../convert/fixtures";
 
 describe("BlockNote schema", () => {
+  it("空筆記可作為 initialContent 開啟", () => {
+    expect(() => BlockNoteEditor.create({
+      schema, initialContent: noteToEditor({ blocks: [] }) as never,
+    })).not.toThrow();
+  });
+
   it("noteToEditor 的輸出能載入 BlockNote，editorToNote 還原後相同", () => {
     const editor = BlockNoteEditor.create({ schema });
     editor.mount(document.createElement("div"));
