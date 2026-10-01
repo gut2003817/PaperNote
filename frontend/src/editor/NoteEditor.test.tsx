@@ -29,7 +29,9 @@ vi.mock("@blocknote/mantine", () => ({
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  mocks.saveNote.mockReset();
   mocks.saveNote.mockResolvedValue({ ok: true });
+  mocks.editor.document = [{ id: "p1", type: "paragraph", content: [{ type: "text", text: "筆記", styles: {} }] }];
   mocks.editor.isEditable = true;
   mocks.editor.getSelection.mockReturnValue(null);
   mocks.editor.getTextCursorPosition.mockReturnValue({ block: mocks.editor.document[0] });
@@ -40,8 +42,8 @@ function mount() {
   const ref = createRef<NoteEditorHandle>();
   const onSelection = vi.fn();
   const onSaveError = vi.fn();
-  render(<NoteEditor ref={ref} slug="paper-a" initial={{ blocks: [{ id: "p1", type: "paragraph", text: "筆記" }] }} onSelection={onSelection} onSaveError={onSaveError} />);
-  return { ref, onSelection, onSaveError };
+  const { unmount } = render(<NoteEditor ref={ref} slug="paper-a" initial={{ blocks: [{ id: "p1", type: "paragraph", text: "筆記" }] }} onSelection={onSelection} onSaveError={onSaveError} />);
+  return { ref, onSelection, onSaveError, unmount };
 }
 
 describe("NoteEditor", () => {
@@ -64,12 +66,77 @@ describe("NoteEditor", () => {
     act(() => mocks.viewProps.onChange());
     const flushed = vi.fn();
     const pending = ref.current!.flush().then(flushed);
+    await act(async () => {});
     expect(mocks.saveNote).toHaveBeenCalledTimes(1);
     expect(flushed).not.toHaveBeenCalled();
     await act(async () => { resolveSave(); await pending; });
     expect(flushed).toHaveBeenCalledTimes(1);
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(mocks.saveNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("進行中的存檔完成後才送出下一次存檔，flush 等待整條佇列", async () => {
+    let resolveFirst!: () => void;
+    let resolveSecond!: () => void;
+    mocks.saveNote
+      .mockReturnValueOnce(new Promise<void>((resolve) => { resolveFirst = resolve; }))
+      .mockReturnValueOnce(new Promise<void>((resolve) => { resolveSecond = resolve; }));
+    const { ref } = mount();
+    act(() => mocks.viewProps.onChange());
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(mocks.saveNote).toHaveBeenCalledExactlyOnceWith("paper-a", { blocks: [{ id: "p1", type: "paragraph", text: "筆記" }] });
+
+    mocks.editor.document[0].content[0].text = "第二版";
+    act(() => mocks.viewProps.onChange());
+    const flushed = vi.fn();
+    const pending = ref.current!.flush().then(flushed);
+    await act(async () => {});
+    expect(mocks.saveNote).toHaveBeenCalledTimes(1);
+    expect(flushed).not.toHaveBeenCalled();
+
+    // 排隊後仍可能修改；實際送出時須讀取最新內容。
+    mocks.editor.document[0].content[0].text = "最新內容";
+    await act(async () => { resolveFirst(); });
+    expect(mocks.saveNote).toHaveBeenCalledTimes(2);
+    expect(mocks.saveNote).toHaveBeenLastCalledWith("paper-a", { blocks: [{ id: "p1", type: "paragraph", text: "最新內容" }] });
+    expect(flushed).not.toHaveBeenCalled();
+
+    await act(async () => { resolveSecond(); await pending; });
+    expect(flushed).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(mocks.saveNote).toHaveBeenCalledTimes(2);
+  });
+
+  it("第二次自動存檔也等待第一個請求完成", async () => {
+    let resolveFirst!: () => void;
+    mocks.saveNote.mockReturnValueOnce(new Promise<void>((resolve) => { resolveFirst = resolve; }));
+    const { ref } = mount();
+    act(() => mocks.viewProps.onChange());
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    mocks.editor.document[0].content[0].text = "自動存檔新版";
+    act(() => mocks.viewProps.onChange());
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(mocks.saveNote).toHaveBeenCalledTimes(1);
+    const pending = ref.current!.flush();
+    await act(async () => { resolveFirst(); await pending; });
+    expect(mocks.saveNote).toHaveBeenCalledTimes(2);
+    expect(mocks.saveNote).toHaveBeenLastCalledWith("paper-a", { blocks: [{ id: "p1", type: "paragraph", text: "自動存檔新版" }] });
+  });
+
+  it("卸載時立即送出尚未到期的修改且不等待請求完成", async () => {
+    let resolveSave!: () => void;
+    mocks.saveNote.mockReturnValueOnce(new Promise<void>((resolve) => { resolveSave = resolve; }));
+    const { unmount, onSaveError } = mount();
+    mocks.editor.document[0].content[0].text = "離開前修改";
+    act(() => mocks.viewProps.onChange());
+    unmount();
+    await act(async () => {});
+    expect(mocks.saveNote).toHaveBeenCalledExactlyOnceWith("paper-a", { blocks: [{ id: "p1", type: "paragraph", text: "離開前修改" }] });
+    expect(onSaveError).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(mocks.saveNote).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveSave(); });
+    expect(onSaveError).toHaveBeenCalledWith(null);
   });
 
   it("存檔失敗回報繁體中文訊息", async () => {

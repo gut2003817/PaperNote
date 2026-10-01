@@ -61,9 +61,11 @@ export const NoteEditor = forwardRef<NoteEditorHandle, Props>(function NoteEdito
 
   const save = useCallback(() => {
     saveTimer.current = undefined;
-    const note = editorToNote(editor.document as unknown as BNBlock[]);
-    pending.current = api
-      .saveNote(slug, note)
+    pending.current = pending.current
+      .then(() => {
+        const note = editorToNote(editor.document as unknown as BNBlock[]);
+        return api.saveNote(slug, note);
+      })
       .then(() => onSaveError(null))
       .catch((e: Error) => onSaveError(`存檔失敗：${e.message}（內容仍在畫面上，請勿關閉分頁）`));
     return pending.current;
@@ -74,7 +76,14 @@ export const NoteEditor = forwardRef<NoteEditorHandle, Props>(function NoteEdito
     saveTimer.current = window.setTimeout(save, 1000);
   };
 
-  useEffect(() => () => window.clearTimeout(saveTimer.current), []);
+  const latestSave = useRef(save);
+  latestSave.current = save;
+  useEffect(() => () => {
+    if (saveTimer.current !== undefined) {
+      window.clearTimeout(saveTimer.current);
+      void latestSave.current();
+    }
+  }, []);
 
   useImperativeHandle(
     ref,
@@ -82,10 +91,13 @@ export const NoteEditor = forwardRef<NoteEditorHandle, Props>(function NoteEdito
       async flush() {
         if (saveTimer.current !== undefined) {
           window.clearTimeout(saveTimer.current);
-          await save();
-        } else {
-          await pending.current;
+          void save();
         }
+        let queued: Promise<void>;
+        do {
+          queued = pending.current;
+          await queued;
+        } while (queued !== pending.current);
       },
       applyReplace(ids, blocks) {
         const { insertedBlocks } = editor.replaceBlocks(ids, noteToEditor({ blocks }) as never);
