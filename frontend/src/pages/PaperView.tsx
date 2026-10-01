@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api";
+import { ChatPanel } from "../chat/ChatPanel";
 import { NoteEditor, type NoteEditorHandle, type Selection } from "../editor/NoteEditor";
 import type { Note } from "../types";
 
@@ -7,7 +8,7 @@ export function PaperView({ slug }: { slug: string }) {
   const [note, setNote] = useState<Note | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [, setSelection] = useState<Selection | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(null);
   const editorRef = useRef<NoteEditorHandle>(null);
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export function PaperView({ slug }: { slug: string }) {
         {saveError && <div className="banner-error">{saveError}</div>}
         <NoteEditor ref={editorRef} key={slug} slug={slug} initial={note} onSelection={setSelection} onSaveError={setSaveError} />
       </main>
+      <ChatPanel slug={slug} selection={selection} editorRef={editorRef} />
     </div>
   );
 }
