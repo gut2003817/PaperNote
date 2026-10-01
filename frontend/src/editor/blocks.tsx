@@ -283,6 +283,8 @@ function WhiteboardView(props: ViewProps<WhiteboardProps>) {
   const lastSaved = useRef(p.scene);
   const timer = useRef<number | undefined>(undefined);
 
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
   const onChange = (elements: readonly unknown[]) => {
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
