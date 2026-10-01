@@ -1,0 +1,5 @@
+[
+  {"summary_md": "# 摘要\n這是一篇測試論文。研究問題是如何驗證筆記系統，方法是用假的 AI 回應，結果在 Table 1, p.1。"},
+  {"reply": "已產生筆記", "blocks_json": "[{\"type\":\"heading\",\"level\":1,\"text\":\"E2E 測試論文\"},{\"type\":\"heading\",\"level\":2,\"text\":\"方法\"},{\"type\":\"paragraph\",\"text\":\"原始段落文字\"},{\"type\":\"eli5\",\"text\":\"就像用假人練習急救。\"},{\"type\":\"chart\",\"spec\":{\"mark\":\"bar\",\"data\":{\"values\":[{\"x\":\"A\",\"y\":1},{\"x\":\"B\",\"y\":3}]},\"encoding\":{\"x\":{\"field\":\"x\",\"type\":\"nominal\"},\"y\":{\"field\":\"y\",\"type\":\"quantitative\"}}},\"source\":\"Table 1, p.1\"},{\"type\":\"figure\",\"path\":\"page-1.png\",\"caption\":\"第一頁\",\"page\":1}]"},
+  {"reply": "已改寫成白話", "blocks_json": "[{\"type\":\"paragraph\",\"text\":\"改寫後的段落\"}]"}
+]
