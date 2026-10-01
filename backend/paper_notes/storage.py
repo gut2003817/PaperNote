@@ -99,8 +99,11 @@ class Storage:
 
     def snapshot(self, slug: str) -> str:
         d = self.paper_dir(slug)
+        p = d / "note.json"
+        if not p.exists():
+            raise NotFound(f"{slug}/note.json")
         name = f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:4]}.json"
-        _atomic_write(d / "history" / name, (d / "note.json").read_text(encoding="utf-8"))
+        _atomic_write(d / "history" / name, p.read_text(encoding="utf-8"))
         return name
 
     def restore(self, slug: str, name: str) -> Note:

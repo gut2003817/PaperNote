@@ -60,6 +60,13 @@ def test_summary_default_empty(st):
     assert st.read_summary(slug) == "# 摘要"
 
 
+def test_snapshot_without_note_raises_not_found(st):
+    slug = st.create_paper("x", b"%PDF")
+    with pytest.raises(NotFound) as exc:
+        st.snapshot(slug)
+    assert str(exc.value) == f"{slug}/note.json"
+
+
 def test_snapshot_and_restore(st):
     slug = st.create_paper("x", b"%PDF")
     st.write_note(slug, _note("v1"))
