@@ -101,6 +101,12 @@ export const NoteEditor = forwardRef<NoteEditorHandle, Props>(function NoteEdito
       },
       applyReplace(ids, blocks) {
         const { insertedBlocks } = editor.replaceBlocks(ids, noteToEditor({ blocks }) as never);
+        const selectedBlocks = insertedBlocks.filter((b) => b.type !== "column");
+        onSelection({
+          blockIds: selectedBlocks.map((b) => b.id),
+          selectedText: "",
+          preview: selectedBlocks[0] ? blockText(selectedBlocks[0]) : "",
+        });
         const newIds = insertedBlocks.map((b) => b.id);
         flash(newIds);
         return newIds;
@@ -112,7 +118,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, Props>(function NoteEdito
         editor.isEditable = !locked;
       },
     }),
-    [editor, save],
+    [editor, save, onSelection],
   );
 
   const onSelectionChange = () => {

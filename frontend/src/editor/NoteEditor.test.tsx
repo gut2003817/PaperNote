@@ -167,6 +167,31 @@ describe("NoteEditor", () => {
     block.remove();
   });
 
+  it("applyReplace 後最後一次選取指向新區塊，排除 column 並清除反白文字", () => {
+    const { ref, onSelection } = mount();
+    const insertedBlocks = [
+      { id: "new-1", type: "paragraph", content: [{ type: "text", text: "改寫後的段落", styles: {} }] },
+      { id: "column-1", type: "column" },
+      { id: "new-2", type: "paragraph", content: [{ type: "text", text: "第二段", styles: {} }] },
+    ];
+    mocks.editor.getTextCursorPosition.mockReturnValue({ block: { id: "unrelated", type: "eli5" } });
+    mocks.editor.replaceBlocks.mockImplementationOnce(() => {
+      // BlockNote 在 replaceBlocks 回傳前同步發出 selection change。
+      mocks.viewProps.onSelectionChange();
+      return { insertedBlocks };
+    });
+
+    act(() => {
+      expect(ref.current!.applyReplace(["p1"], [
+        { id: "new-1", type: "paragraph", text: "改寫後的段落" },
+        { id: "new-2", type: "paragraph", text: "第二段" },
+      ])).toEqual(["new-1", "column-1", "new-2"]);
+    });
+
+    expect(onSelection).toHaveBeenNthCalledWith(1, { blockIds: ["unrelated"], selectedText: "", preview: "［eli5］" });
+    expect(onSelection).toHaveBeenLastCalledWith({ blockIds: ["new-1", "new-2"], selectedText: "", preview: "改寫後的段落" });
+  });
+
   it("選取排除 column 並限制文字為 2000 字，無選取時提供游標區塊預覽", () => {
     const { onSelection } = mount();
     act(() => mocks.viewProps.onSelectionChange());

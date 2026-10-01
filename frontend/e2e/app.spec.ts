@@ -22,6 +22,7 @@ test("匯入 → 選取討論 → AI 改寫 → 復原 → 拖曳圖表 → 重�
   await page.getByPlaceholder(/例如/).fill("改白話");
   await page.getByRole("button", { name: /送出/ }).click();
   await expect(note.getByText("改寫後的段落")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.chat-selection')).toContainText('改寫後的段落');
   await expect(note.getByText("原始段落文字")).toHaveCount(0);
   await expect(page.getByText("已改寫成白話")).toBeVisible();
 
