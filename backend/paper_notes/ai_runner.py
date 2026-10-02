@@ -20,7 +20,7 @@ def _bin(engine: str) -> str:
 
 
 def claude_command(schema: dict) -> list[str]:
-    return [_bin("claude"), "-p", "--output-format", "json", "--strict-mcp-config",
+    return [_bin("claude"), "-p", "--model", "sonnet", "--output-format", "json", "--strict-mcp-config",
             "--no-session-persistence", "--allowedTools", "Read", "Skill",
             "--disallowedTools", *_CLAUDE_DENY, "--json-schema", json.dumps(schema)]
 

@@ -23,6 +23,7 @@ def test_claude_command_flags_and_no_prompt_in_argv():
         assert flag in cmd
     assert "Bash" in cmd[cmd.index("--disallowedTools"):]
     assert "--bare" not in cmd
+    assert cmd[cmd.index("--model") + 1] == "sonnet"
 
 
 @pytest.mark.parametrize("engine,msg", [("claude", "claude 回報錯誤"), ("codex", "codex 失敗")])
