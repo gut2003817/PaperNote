@@ -1059,7 +1059,10 @@
  "正在重启…": "Restarting…",
  "更新": "Update",
  "稍后": "Later",
- "正在下载 {p}%": "Downloading {p}%",
+ "正在下载 {p}%": "Downloading {p}%",
+
+
+
  "同时译几段": "Parallel segments",
  "自动": "Auto",
  "把全文切成几段同时译，段内按顺序译；自动按篇幅每段约 2 批、最多 4 段；手动最多 8 段": "Split the paper into segments translated at the same time, in order within each segment; Auto uses about 2 batches per segment, up to 4; up to 8 when set manually",
@@ -1088,5 +1091,23 @@
  "双语顺序": "Bilingual order",
  "（原文）": " (original)",
  "对应原文里的标注": "Matches an annotation on the original",
- "对应译文里的标注": "Matches an annotation on the translation"
+ "对应译文里的标注": "Matches an annotation on the translation",
+ "-笔记.zip": "-notes.zip",
+ "只支持 PNG、JPEG、WebP、GIF 图片": "Only PNG, JPEG, WebP and GIF images are supported",
+ "图片": "Image",
+ "图片内容无法识别": "The image could not be read",
+ "图片太大（上限 {mb} MB）": "The image is too large (limit {mb} MB)",
+ "图片尺寸太大": "The image dimensions are too large",
+ "图片已上传，但这条笔记已经不在了": "The image was uploaded, but this note no longer exists",
+ "图片没有插入：{msg}": "Image not inserted: {msg}",
+ "导出失败：{msg}": "Export failed: {msg}",
+ "插入图片（也可以直接粘贴截图或拖进来）": "Insert image (you can also paste a screenshot or drop a file here)",
+ "正在上传图片…": "Uploading image…",
+ "没有收到图片内容": "No image data received",
+ "离线版不能插入图片": "Images cannot be inserted in the offline version",
+ "笔记图片目录不是普通文件夹": "The note images folder is not a regular folder",
+ "笔记里有图片时导出成 zip（含图片文件）。": "If notes contain images, the export is a zip that includes the image files.",
+ "请求不完整": "The request is incomplete",
+ "（图片未导出）": "(image not exported)",
+ "（图片缺失）": "(image missing)"
 }

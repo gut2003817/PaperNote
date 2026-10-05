@@ -25,7 +25,7 @@
     dlg.querySelector(".dialog").innerHTML = "<h2>" + PR.t("导出笔记") + "</h2><div class=\"exp-opts\">" +
       KINDS.map(([k, l]) => '<label><input type="checkbox" data-exp="' + k + '"' + (saved[k] ? " checked" : "") + ">" + l +
         (c[k] != null ? '<span class="n">' + PR.t("{n} 条", { n: c[k] }) + "</span>" : "") + "</label>").join("") +
-      '</div><p class="hint">' + PR.t("导出成 Markdown，按原文章节顺序排，可以直接放进 Obsidian、Notion。笔记里有图片时导出成 zip（含图片文件）。") + "</p>" +
+      '</div><p class="hint">' + PR.t("导出成 Markdown，按原文章节顺序排，可以直接放进 Obsidian、Notion。") + PR.t("笔记里有图片时导出成 zip（含图片文件）。") + "</p>" +
       '<div class="actions"><button class="btn" data-exp-close>' + PR.t("取消") + '</button><button class="btn primary" data-exp-go>' + PR.t("导出") + "</button></div>";
     dlg.classList.add("open");
   };
