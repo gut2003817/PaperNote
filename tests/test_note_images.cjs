@@ -60,7 +60,7 @@ test("external, javascript:, traversal and malformed forms are never images", ()
 
 test("alt text with quotes or markup cannot break out of the attribute", () => {
   const PR = markup();
-  for (const alt of ['" onerror="alert(1)', '"onerror=alert(1) x="', "<script>alert(1)</script>", "'><img src=x onerror=alert(1)>", "**b** *i* [1] 图 1"]) {
+  for (const alt of ['" onerror="alert(1)', '"onerror=alert(1) x="', "<script>alert(1)</script>", "'><img src=x onerror=alert(1)>", "**b** *i* 图 1 & co"]) {
     const html = PR.md(`![${alt}](note-images/${NAME})`);
     const tags = imgTags(html);
     assert.equal(tags.length, 1, alt + " -> " + html);
