@@ -6,13 +6,11 @@
 匯入 PDF，背景逐頁翻譯；公式、表格照原文排好，隨時對照原文，邊讀邊劃線、記筆記、提問。<br>
 本地執行，文獻庫預設儲存在電腦上，也可以放進你自己的雲端硬碟同步資料夾</p>
 
-<p align="center"><b>繁體中文</b> · <a href="README.md">簡體中文</a> · <a href="README.en.md">English</a></p>
+<p align="center"><b>繁體中文</b> · <a href="README.md">本版說明</a> · <a href="README.zh-CN.md">簡體中文</a> · <a href="README.en.md">English</a></p>
 
 <p align="center"><a href="https://edwardxlai.github.io/easyread/demo/"><b>▶ 線上試讀一篇</b></a> · <a href="https://edwardxlai.github.io/easyread/">專案主頁</a> · <a href="https://github.com/Edwardxlai/easyread/releases/latest">下載</a></p>
 
 <p align="center">
-  <a href="https://github.com/Edwardxlai/easyread/releases/latest"><img src="https://img.shields.io/github/v/release/Edwardxlai/easyread?label=%E7%89%88%E6%9C%AC" alt="版本"></a>
-  <a href="https://github.com/Edwardxlai/easyread/actions/workflows/test.yml"><img src="https://github.com/Edwardxlai/easyread/actions/workflows/test.yml/badge.svg" alt="測試"></a>
   <img src="https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-本地執行-2f6070" alt="平臺">
   <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT">
 </p>
@@ -57,6 +55,8 @@
 <p align="center"><img src="docs/images/settings.jpg" width="640" alt="設定"></p>
 
 ## 安裝
+
+> **本版（繁體中文版）請從原始碼執行**，見 [README.md](README.md) 的「快速開始」。下面「下載安裝包」指的是上游 Releases 的安裝包，**不含**本版的繁體介面、筆記圖片、漏段偵測與安全加固。
 
 **最省事：下載安裝包**（不用裝 Python）。在 [Releases](https://github.com/Edwardxlai/easyread/releases/latest) 下載：
 

@@ -6,7 +6,7 @@
 Drop in a PDF and it gets translated page by page in the background. Equations and tables keep their original layout, the source is always one click away, and you can highlight, take notes and ask AI as you read.<br>
 Runs locally. You choose the model service and whether to keep your library in a synced folder.</p>
 
-<p align="center"><a href="README.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <b>English</b></p>
+<p align="center"><a href="README.md">This fork</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <b>English</b></p>
 
 <p align="center"><a href="https://edwardxlai.github.io/easyread/demo/"><b>▶ Try the demo · Chinese translation</b></a> · <a href="https://edwardxlai.github.io/easyread/en/">Homepage</a> · <a href="https://github.com/Edwardxlai/easyread/releases/latest">Download</a></p>
 

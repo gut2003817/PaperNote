@@ -11,6 +11,14 @@
 - 界面语言新增“繁体中文”（zh-TW，台湾用语）：软件、文件、设置、导入／导出等用词按台湾习惯，词典在 `easyread/web/i18n/zh-TW.json`，由 `scripts/gen_zhtw.py`（OpenCC s2twp + 人工修正 `scripts/zhtw_overrides.json`）生成，运行时不需要 OpenCC。系统语言是 zh-TW / zh-Hant / zh-HK / zh-MO（含 macOS 的 zh-Hant-TW）时自动用繁体，zh-CN / zh-Hans 等仍是简体；设置 → 阅读 → 界面语言也可以手动选。
 - 译文语言新增“繁体中文”：论文译成繁体、用台湾习惯用词与术语，“问 AI”、整理笔记的回答也用繁体；译文字体改用繁体字型（明体 / 黑体）。数据字段名（`zh`、`title_zh` 等）不变，旧论文不受影响。
 - 新增 `README.zh-TW.md`；桌面版（Electron）能分辨繁体地区，启动报错用繁体。
+- 译文语言的默认值改成繁体（本分支）；原版的简体 README 移到 `README.zh-CN.md`，`README.md` 改为本分支的说明。
+
+**漏段检测**
+- 同一段落跨页时，两批翻译交接处可能让整段原文没进任何块（上游问题：提示词只看上一段结尾有没有标点）。新增 `easyread check <论文ID>` 的漏段检测：列出页码、前 80 字和约略字数，并提示用 `easyread translate <id> --pages N-1,N` 重译或 `easyread blocks` 手动补；翻译完成时 job.log 也会提示。只检测，不自动补译；用 `blocks` 补完后要再跑 `easyread locate <id>`。
+
+**本机服务安全加固**
+- 所有请求先校验 `Host`，只认 `127.0.0.1`、`localhost`、`[::1]` 加实际端口（防 DNS rebinding）；`Origin` 改用同一份白名单，修掉 WebSocket 里原来比对攻击者可控 Host 的检查。用局域网 IP 或其他域名访问会被 403。
+- 设置 API 对 claude／codex 的 `command` 和 `extra_args` 加白名单（`easyread/cli_guard.py`）：命令只认 claude／codex 本身，参数只放行少数良性旗标，其余（如 `--settings`、`--mcp-config`、`--dangerously-*`）一律拒绝；整个设置补丁有一项不合法就整体不保存，已有的 config.json 不会被改写。
 
 ## v1.4（规划中）
 
