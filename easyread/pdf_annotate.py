@@ -269,22 +269,45 @@ def _segment(pages: _Pages, block: dict, en: str, en_n: str, loc: dict | None):
             inside = [i for i in hits if _in_box(chars[idx[i]], loc["box"])]
             hits = inside or hits
         a = hits[0]
-        limit = a + int(span * 1.3) + 80
-        b = text.find(tail, a, limit) if tail else -1
+        b = text.find(tail, a) if tail else -1
         if b >= 0:
             return [(pn, a, b + len(tail))]
-        rest = span - (len(text) - a)
         nxt = pages.stream(pn + 1)
-        if rest > 0 and nxt and tail:  # 段落接到下一页
-            b2 = nxt[0].find(tail, 0, rest + 600)
+        if nxt and tail:  # 段落接到下一页；下一页开头常先排图、边栏，段尾不一定离页首很近，整页找
+            b2 = nxt[0].find(tail)
             if b2 >= 0:
                 return [(pn, a, len(text)), (pn + 1, 0, b2 + len(tail))]
         end = min(len(text), a + span + 40)  # 没对到段尾：按长度估，让逐字对齐去收
         segs = [(pn, a, end)]
+        rest = span - (len(text) - a)
         if rest > 0 and nxt:
             segs.append((pn + 1, 0, min(len(nxt[0]), rest + 200)))
         return segs
     return None
+
+
+CORE = 8  # 逐字对齐里，连续对上这么多个字符才算可靠的锚
+
+
+def _trusted(blocks) -> list:
+    """SequenceMatcher 的对齐块里，短块常是和图里文字、题注、页眉的巧合（the、and…）。
+    只留：可靠的长块，夹在两个长块之间的块，以及紧贴长块外侧（中间几乎没有多余字符）的短块。"""
+    blocks = [m for m in blocks if m.size]
+    core = [i for i, m in enumerate(blocks) if m.size >= CORE]
+    if not core:
+        return [max(blocks, key=lambda m: m.size)] if blocks else []
+    lo, hi = core[0], core[-1]
+    while lo > 0:  # 往前接：两块之间页上多出来的字不超过英文这边多出来的字 + 3
+        m, n = blocks[lo - 1], blocks[lo]
+        if (n.b - m.b - m.size) - (n.a - m.a - m.size) > 3:
+            break
+        lo -= 1
+    while hi < len(blocks) - 1:
+        m, n = blocks[hi], blocks[hi + 1]
+        if (n.b - m.b - m.size) - (n.a - m.a - m.size) > 3:
+            break
+        hi += 1
+    return blocks[lo:hi + 1]
 
 
 def _map_range(pages: _Pages, segs, en_n: str, na: int, nb: int):
@@ -297,7 +320,7 @@ def _map_range(pages: _Pages, segs, en_n: str, na: int, nb: int):
     seg_text = "".join(flat)
     sm = SequenceMatcher(None, en_n, seg_text, autojunk=False)
     pairs = []  # (英文位置, 字符流位置)
-    for m in sm.get_matching_blocks():
+    for m in _trusted(sm.get_matching_blocks()):
         for t in range(m.size):
             if na <= m.a + t < nb:
                 pairs.append((m.a + t, m.b + t))

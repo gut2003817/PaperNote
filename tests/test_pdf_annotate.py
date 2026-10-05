@@ -116,6 +116,8 @@ X_ZH = ["跨页段落从右栏底部开始，接到下一页继续。", "第二�
 U_EN = "Unaligned paragraph text stays whole when highlighted by the reader."
 U_ZH = "没有句子对齐的段落整段标出。"
 E_EN, E_ZH, E_S = aligned(["Edited paragraph one is here.", "Edited paragraph two follows it."], ["改过的第一句。", "改过的第二句。"])
+P_PRINTED = "Partial print paragraph keeps its words."
+P_EN, P_ZH = P_PRINTED + " Then a bend.", "只印了一部分的段落。"
 R_EN, R_ZH, R_S = aligned(["Rotated pages keep their highlights aligned.", "Readers rotate scanned pages often."],
                           ["旋转页的划线也对得上。", "读者常旋转扫描页。"])
 
@@ -129,15 +131,20 @@ PAGE1 = [  # 左栏：段落 A（含 se-/cure 连字号断行）；右栏：列�
     (330, 658, "with a short summary."),
     (330, 120, "Cross page paragraphs begin near the bottom"),
     (330, 106, "of the right column and continue"),
+    (330, 70, "Figure 9. The scenarios on the next page and the corresponding threats."),  # 字符流里紧跟在段落后面的题注
 ]
 PAGE2 = [
     (72, 760, "Fixture Journal 2026 Page 2"),  # 页眉：跨页段落中间多出来的字
+    # 下一页先排一大块边栏（字符流里在接续文字前面、超过 600 个字母）：段尾不在页首附近
+    *[(330, 745 - 12 * i, f"Sidebar {i}: the next page begins with figure words and more") for i in range(14)],
     (72, 720, "on the next page with more words. The second"),
     (72, 706, "sentence finishes the cross page paragraph."),
     (72, 660, "Unaligned paragraph text stays whole when"),
     (72, 646, "highlighted by the reader."),
     (72, 600, "Edited paragraph one is here. Edited"),
     (72, 586, "paragraph two follows it."),
+    (72, 540, "Partial print paragraph keeps its words."),  # 英文末句没印出来（P_EN 多一句）
+    (72, 526, "Junk: the cat has a bend radius."),  # 字符流里紧跟着的无关文字，含零星可巧合的字母
 ]
 PAGE3 = [  # /Rotate 90：字沿用户空间 +y 方向写，显示时是正的；下一行往 +x
     (150, 100, "Rotated pages keep their highlights aligned."),
@@ -165,6 +172,7 @@ def build_paper(root: Path) -> None:
         {"id": "p1-2", "type": "para", "page": 1, "en": x_en, "zh": x_zh, "sents": x_s},
         {"id": "p2-0", "type": "para", "page": 2, "en": U_EN, "zh": U_ZH},
         {"id": "p2-1", "type": "para", "page": 2, "en": E_EN, "zh": E_ZH, "sents": E_S},
+        {"id": "p2-2", "type": "para", "page": 2, "en": P_EN, "zh": P_ZH},
         {"id": "p3-0", "type": "para", "page": 3, "en": R_EN, "zh": R_ZH, "sents": R_S},
     ]
     paper = {"schema": 1, "meta": {"title_en": 'Fixture: A "Tiny" Paper/Test', "title_zh": "测试"}, "blocks": blocks}
@@ -188,8 +196,10 @@ def default_notes():
         note("en-exact", "p1-0", "p1-0", "network secure against", side="en", style="underline", color="green"),  # 跨 se-/cure
         note("item", "p1-1", "p1-1#1", "简短总结", color="blue"),
         note("cross", "p1-2", "p1-2", "接到下一页", color="pink"),
+        note("cross2", "p1-2", "p1-2", "第二句", side="zh"),  # 跨页段落里只在第 2 页的那句
         note("no-sents", "p2-0", "p2-0", "整段", color="green"),
         note("edited", "p2-1", "p2-1", "我改的第二句"),
+        note("partial", "p2-2", "p2-2", "一部分"),
         note("rotated", "p3-0", "p3-0", "highlights aligned", side="en", kind="question", body="Why rotate?", color="pink"),
         note("missing", "p1-0", "p1-0", "这句话不在任何地方"),
         note("gone", "p1-0", "p1-0", "稳健", deleted=True),
@@ -265,7 +275,10 @@ class TargetTest(PdfAnnotateBase):
     def test_cross_page_paragraph(self):
         self.assert_marks("cross", X_EN[0])
         self.assertEqual(self.items["cross"]["pages"], [1, 2])
-        self.assertNotIn("fixture", norm(self.recovered("cross")))  # 页眉不算进去
+        got = norm(self.recovered("cross"))
+        for junk in ("fixture", "figure", "sidebar", "scenarios"):  # 页眉、题注、边栏都不算进去
+            self.assertNotIn(junk, got)
+        self.assert_marks("cross2", X_EN[1])
 
     def test_no_sents_marks_whole_paragraph(self):
         self.assert_marks("no-sents", U_EN)
@@ -275,12 +288,16 @@ class TargetTest(PdfAnnotateBase):
         self.assert_marks("edited", E_EN)
         self.assertEqual(self.items["edited"]["mode"], "para")
 
+    def test_unprinted_tail_does_not_grab_neighbouring_text(self):
+        """段尾在原页上找不到时按长度估范围；逐字对齐不能把后面无关文字里巧合的字母（the、a bend）也标进去。"""
+        self.assertEqual(norm(self.recovered("partial")), norm(P_PRINTED))
+
     def test_rotated_page(self):
         self.assert_marks("rotated", "highlights aligned")
 
     def test_missing_quote_is_counted(self):
-        self.assertEqual(self.stats["total"], 8)  # 删掉的和没有引文的笔记不算
-        self.assertEqual(self.stats["written"], 7)
+        self.assertEqual(self.stats["total"], 10)  # 删掉的和没有引文的笔记不算
+        self.assertEqual(self.stats["written"], 9)
         self.assertEqual([s["id"] for s in self.stats["skipped"]], ["missing"])
         s = self.stats["skipped"][0]
         self.assertEqual(s["page"], 1)
@@ -341,7 +358,7 @@ class AnnotationTest(PdfAnnotateBase):
 
     def test_quads_inside_page(self):
         ann = self.annots()[1]
-        self.assertEqual(len(ann), 8)  # 7 条，跨页那条两页各一个
+        self.assertEqual(len(ann), 10)  # 9 条，跨页那条两页各一个
         for pn, page, a in ann:
             box = page.cropbox
             q = [float(v) for v in a["/QuadPoints"]]
@@ -457,7 +474,7 @@ class ServerTest(unittest.TestCase):
         self.assertIn("X-Content-Type-Options: nosniff", head)
         self.assertRegex(head, r"Content-Disposition: attachment; filename=\"annotated\.pdf\"; filename\*=UTF-8''[^\r\n]+")
         self.assertIn("X-EasyRead-Skipped: 1", head)
-        self.assertIn("X-EasyRead-Written: 7", head)
+        self.assertIn("X-EasyRead-Written: 9", head)
         self.assertTrue(body.startswith(b"%PDF"))
         self.assertEqual(len(pypdf.PdfReader(io.BytesIO(body)).pages), 3)
         self.assertEqual(self.listing(), before)  # 没往文献库写任何文件
