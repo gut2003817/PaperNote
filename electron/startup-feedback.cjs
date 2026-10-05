@@ -21,10 +21,12 @@ function loginShellPath(platform = process.platform, shell = process.env.SHELL |
   });
 }
 
+// zh：true（简体）、"zh-TW"（繁体）、false（英文）
 function loadingUrl(zh) {
-  const title = zh ? "正在打开 EasyRead" : "Opening EasyRead";
-  const hint = zh ? "正在准备文献库，请稍候…" : "Preparing your library. Please wait…";
-  const html = `<!doctype html><html lang="${zh ? "zh-CN" : "en"}"><meta charset="utf-8">
+  const tw = zh === "zh-TW";
+  const title = tw ? "正在開啟 EasyRead" : zh ? "正在打开 EasyRead" : "Opening EasyRead";
+  const hint = tw ? "正在準備文獻庫，請稍候…" : zh ? "正在准备文献库，请稍候…" : "Preparing your library. Please wait…";
+  const html = `<!doctype html><html lang="${tw ? "zh-TW" : zh ? "zh-CN" : "en"}"><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <title>EasyRead</title><style>
 :root{color-scheme:light dark}body{margin:0;height:100vh;display:grid;place-content:center;text-align:center;background:#f5f3ed;color:#273e3e;font:16px system-ui,sans-serif}

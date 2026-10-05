@@ -17,6 +17,9 @@ startup.mark(app, "electron-entry");
 
 // 桌面版自己的几句报错跟系统语言走（界面语言由后端决定，见 easyread/i18n.py）
 const isZh = () => app.getLocale().toLowerCase().startsWith("zh");
+// 繁体中文地区（zh-TW、zh-HK、zh-MO、zh-Hant-*）：这几句报错用繁体，别当成简体
+const isZhTW = () => /^zh[-_](tw|hk|mo|hant)/i.test(app.getLocale());
+const say = (cn, tw, en) => (isZhTW() ? tw : isZh() ? cn : en);
 let backend;
 let mainWindow;
 let backendReady;
@@ -38,7 +41,7 @@ function backendCommand() {
   if (app.isPackaged) {
     const executable = packagedBackend();
     if (!fs.existsSync(executable)) {
-      throw new Error(isZh() ? `找不到打包后的 EasyRead 后端：${executable}` : `Bundled EasyRead backend not found: ${executable}`);
+      throw new Error(say(`找不到打包后的 EasyRead 后端：${executable}`, `找不到打包後的 EasyRead 後端：${executable}`, `Bundled EasyRead backend not found: ${executable}`));
     }
     return { command: executable, args: ["serve", "--port", "0"], cwd: os.homedir() };
   }
@@ -63,7 +66,7 @@ function startBackend() {
   startup.mark(app, "shell-path-start");
   const shellPath = await startup.loginShellPath(process.platform);
   startup.mark(app, "shell-path-ready");
-  if (quitting) throw new Error(isZh() ? "启动已取消" : "Startup cancelled");
+  if (quitting) throw new Error(say("启动已取消", "啟動已取消", "Startup cancelled"));
   if (shellPath) {
     env.PATH = [...new Set([...shellPath.split(":"), ...(env.PATH || "").split(":")].filter(Boolean))].join(":");
   }
@@ -82,7 +85,7 @@ function startBackend() {
       fn(value);
     };
     const timer = setTimeout(() => {
-      finish(reject, new Error((isZh() ? "EasyRead 后端启动超时。" : "EasyRead backend timed out while starting. ") + output.slice(-500)));
+      finish(reject, new Error(say("EasyRead 后端启动超时。", "EasyRead 後端啟動逾時。", "EasyRead backend timed out while starting. ") + output.slice(-500)));
       stopBackend();
     }, 30000);
 
@@ -103,7 +106,7 @@ function startBackend() {
     });
     backend.once("error", (error) => finish(reject, error));
     backend.once("exit", (code, signal) => {
-      if (!settled) finish(reject, new Error((isZh() ? `EasyRead 后端退出（code=${code}, signal=${signal}）。` : `EasyRead backend exited (code=${code}, signal=${signal}). `) + output.slice(-500)));
+      if (!settled) finish(reject, new Error(say(`EasyRead 后端退出（code=${code}, signal=${signal}）。`, `EasyRead 後端結束（code=${code}, signal=${signal}）。`, `EasyRead backend exited (code=${code}, signal=${signal}). `) + output.slice(-500)));
       backend = undefined;
       backendReady = undefined;
       backendUrl = undefined;
@@ -131,7 +134,7 @@ function backendJson(endpoint, token) {
         } catch (error) { reject(error); }
       });
     });
-    req.setTimeout(8000, () => req.destroy(new Error(isZh() ? "后端关闭超时，请稍后重试" : "Backend shutdown timed out. Try again later.")));
+    req.setTimeout(8000, () => req.destroy(new Error(say("后端关闭超时，请稍后重试", "後端關閉逾時，請稍後重試", "Backend shutdown timed out. Try again later."))));
     req.on("error", reject);
     req.end(token ? "{}" : undefined);
   });
@@ -145,7 +148,7 @@ async function stopBackendGracefully() {
   // 后端清掉占用标记、关闭 HTTP 服务后才启动新进程。
   if (backend !== child) return;
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { child.removeListener("exit", exited); reject(new Error(isZh() ? "后端尚未退出，请稍后重试" : "The backend has not exited yet. Try again later.")); }, 8000);
+    const timer = setTimeout(() => { child.removeListener("exit", exited); reject(new Error(say("后端尚未退出，请稍后重试", "後端尚未結束，請稍後重試", "The backend has not exited yet. Try again later."))); }, 8000);
     function exited() { clearTimeout(timer); resolve(); }
     child.once("exit", exited);
   });
@@ -246,7 +249,7 @@ async function createWindow() {
   });
   mainWindow.on("closed", () => { mainWindow = undefined; });
   try {
-    await openingWindow.loadURL(startup.loadingUrl(isZh()));
+    await openingWindow.loadURL(startup.loadingUrl(isZhTW() ? "zh-TW" : isZh()));
     if (mainWindow !== openingWindow || quitting) return;
     if (state.maximized) openingWindow.maximize();
     openingWindow.show();
@@ -260,7 +263,7 @@ async function createWindow() {
   } catch (error) {
     if (mainWindow !== openingWindow || quitting) return;
     startup.mark(app, "startup-failed");
-    dialog.showErrorBox(isZh() ? "EasyRead 启动失败" : "EasyRead failed to start", error.message);
+    dialog.showErrorBox(say("EasyRead 启动失败", "EasyRead 啟動失敗", "EasyRead failed to start"), error.message);
     app.quit();
   } finally {
     windowOpening = false;
