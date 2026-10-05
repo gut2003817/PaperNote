@@ -1,5 +1,12 @@
 # 更新记录
 
+## 未发布
+
+**繁体中文支持**
+- 界面语言新增“繁体中文”（zh-TW，台湾用语）：软件、文件、设置、导入／导出等用词按台湾习惯，词典在 `easyread/web/i18n/zh-TW.json`，由 `scripts/gen_zhtw.py`（OpenCC s2twp + 人工修正 `scripts/zhtw_overrides.json`）生成，运行时不需要 OpenCC。系统语言是 zh-TW / zh-Hant / zh-HK / zh-MO（含 macOS 的 zh-Hant-TW）时自动用繁体，zh-CN / zh-Hans 等仍是简体；设置 → 阅读 → 界面语言也可以手动选。
+- 译文语言新增“繁体中文”：论文译成繁体、用台湾习惯用词与术语，“问 AI”、整理笔记的回答也用繁体；译文字体改用繁体字型（明体 / 黑体）。数据字段名（`zh`、`title_zh` 等）不变，旧论文不受影响。
+- 新增 `README.zh-TW.md`；桌面版（Electron）能分辨繁体地区，启动报错用繁体。
+
 ## v1.4（规划中）
 
 - **Zotero 整库迁移**：一键把 Zotero 文献库搬进 EasyRead，包括分类、标签、元数据、PDF，以及已有的笔记和高亮。这次大改动的思路受 [#26](https://github.com/Edwardxlai/easyread/issues/26) 社区插件 [zotero-easyread](https://github.com/apple5089/zotero-easyread)（@apple5089）启发，发布时特别致谢。
