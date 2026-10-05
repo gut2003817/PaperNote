@@ -1,4 +1,5 @@
 """界面语言：系统语言判断、tr 填占位符、页面注入词典，以及所有界面文字都有英文。  python -m unittest tests.test_i18n"""
+import json
 import os
 import subprocess
 import sys
@@ -19,10 +20,40 @@ class I18nTest(unittest.TestCase):
         i18n.system_lang.cache_clear()
 
     def test_system_lang_from_electron(self):
-        for tag, want in (("zh-CN", "zh"), ("zh-TW", "zh"), ("en-US", "en"), ("de", "en"), ("ja", "en")):
+        # zh-TW 原来也归到 "zh"（简体）；现在繁体地区单独是 "zh-TW"，见 test_system_lang_traditional
+        for tag, want in (("zh-CN", "zh"), ("zh-TW", "zh-TW"), ("en-US", "en"), ("de", "en"), ("ja", "en")):
             i18n.system_lang.cache_clear()
             with mock.patch.dict(os.environ, {"EASYREAD_SYSTEM_LANG": tag}):
                 self.assertEqual(i18n.system_lang(), want, tag)
+
+    def test_system_lang_traditional(self):
+        cases = (
+            ("zh-TW", "zh-TW"), ("zh_TW", "zh-TW"), ("zh-tw", "zh-TW"), ("zh-Hant", "zh-TW"), ("zh-Hant-TW", "zh-TW"),
+            ("zh-HK", "zh-TW"), ("zh-MO", "zh-TW"), ("zh-Hant-HK", "zh-TW"), ("zh_TW.UTF-8", "zh-TW"),
+            ("zh-CN", "zh"), ("zh-Hans", "zh"), ("zh-Hans-CN", "zh"), ("zh-SG", "zh"), ("zh", "zh"), ("zh_CN.UTF-8", "zh"),
+            ("en-US", "en"), ("ja-JP", "en"),
+        )
+        for tag, want in cases:
+            i18n.system_lang.cache_clear()
+            with mock.patch.dict(os.environ, {"EASYREAD_SYSTEM_LANG": tag}):
+                self.assertEqual(i18n.system_lang(), want, tag)
+
+    def test_system_lang_macos_apple_languages(self):
+        env = {k: v for k, v in os.environ.items() if k not in ("EASYREAD_SYSTEM_LANG", "LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE")}
+        for first, want in (("zh-Hant-TW", "zh-TW"), ("zh-Hant-HK", "zh-TW"), ("zh-Hans-CN", "zh"), ("en-TW", "en")):
+            i18n.system_lang.cache_clear()
+            out = f'(\n    "{first}",\n    "en-US"\n)\n'
+            with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(i18n.sys, "platform", "darwin"), \
+                    mock.patch.object(i18n.subprocess, "run", lambda *a, **k: mock.Mock(stdout=out)):
+                self.assertEqual(i18n.system_lang(), want, first)
+
+    def test_choice_accepts_zh_tw(self):
+        with mock.patch.dict(os.environ, {"EASYREAD_LANG": "zh-TW"}):
+            self.assertEqual(i18n.choice(), "zh-TW")
+            self.assertEqual(i18n.lang(), "zh-TW")
+        with mock.patch.dict(os.environ, {"EASYREAD_LANG": "xx"}), mock.patch("easyread.prefs.load", lambda: {"ui": {"lang": "zh-TW"}}):
+            self.assertEqual(i18n.choice(), "zh-TW")
+        self.assertIn("zh-TW", i18n.CHOICES)
 
     def test_system_lang_from_env(self):
         env = {k: v for k, v in os.environ.items() if k not in ("EASYREAD_SYSTEM_LANG", "LC_ALL", "LC_MESSAGES", "LANGUAGE")}
@@ -44,6 +75,42 @@ class I18nTest(unittest.TestCase):
                 self.assertEqual(i18n.tr("词典里没有"), "词典里没有")
             with mock.patch.object(i18n, "lang", lambda: "zh"):
                 self.assertEqual(i18n.tr("已导入 {n} 篇", n=3), "已导入 3 篇")
+
+    def test_tr_zh_tw(self):
+        fake = {"设置": "設定", "已导入 {n} 篇": "已匯入 {n} 篇"}
+        with mock.patch.object(i18n, "zhtw_dict", lambda: fake), mock.patch.object(i18n, "lang", lambda: "zh-TW"):
+            self.assertEqual(i18n.tr("已导入 {n} 篇", n=3), "已匯入 3 篇")
+            self.assertEqual(i18n.tr("设置"), "設定")
+            self.assertEqual(i18n.tr("词典里没有 {n}", n=1), "词典里没有 1")  # 查不到退回简体原文，不报错
+
+    def test_zhtw_dict_matches_en_keys(self):
+        en = json.loads(i18n.EN_PATH.read_text(encoding="utf-8"))
+        tw = json.loads(i18n.ZHTW_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(set(tw), set(en))
+        self.assertEqual([k for k in tw if not isinstance(tw[k], str) or not tw[k].strip()], [])
+
+    def test_zhtw_real_dict_is_traditional_taiwan(self):
+        with mock.patch.object(i18n, "lang", lambda: "zh-TW"):
+            self.assertEqual(i18n.tr("设置"), "設定")
+            self.assertEqual(i18n.tr("导入"), "匯入")
+            self.assertEqual(i18n.tr("默认"), "預設")
+            self.assertEqual(i18n.tr("文献库"), "文獻庫")
+            self.assertEqual(i18n.tr("已导入 {n} 篇", n=3), "已匯入 3 篇")
+        # 占位符一个不能少：{n}、{msg} 这类花括号变量在繁体词条里必须原样保留
+        import re
+        en = json.loads(i18n.EN_PATH.read_text(encoding="utf-8"))
+        tw = json.loads(i18n.ZHTW_PATH.read_text(encoding="utf-8"))
+        ph = re.compile(r"\{\w+\}")
+        self.assertEqual([k for k in en if sorted(ph.findall(k)) != sorted(ph.findall(tw[k]))], [])
+
+    def test_inject_zh_tw(self):
+        page = '<html lang="zh-CN">\n<head><title>EasyRead</title></head>'
+        with mock.patch.object(i18n, "zhtw_dict", lambda: {"设置": "設定</script>"}):
+            out = i18n.inject(page, "zh-TW")
+        self.assertIn('<html lang="zh-TW"', out)
+        self.assertIn('id="pr-i18n"', out)
+        self.assertNotIn("設定</script>", out)  # < 要转义
+        self.assertIn("\\u003c", out)
 
     def test_inject(self):
         page = '<html lang="zh-CN">\n<head><title>EasyRead</title></head>'
