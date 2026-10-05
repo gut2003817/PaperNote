@@ -9,7 +9,7 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from . import consistency, engines, front_context, langs, netcheck, pdfwork, prompts, prompts_en, segments, sentences, sources, terms
+from . import consistency, coverage, engines, front_context, langs, netcheck, pdfwork, prompts, prompts_en, segments, sentences, sources, terms
 from .checks import block_problems, tex_problems
 from .figures import normalize_figure, prepare_figures
 from .i18n import tr
@@ -366,6 +366,12 @@ def translate_pages(ws: Workspace, cfg: dict, pages: list[int], cancel, report, 
         except Exception as e:  # noqa: BLE001
             journal(ws, tr("术语一致性检查没做成：{err}", err=str(e)[:300]))
             log.warning("术语一致性检查失败 %s: %s", ws.id, e)
+    try:  # 纯本地比对 extract 与块，不调模型；只提示，不改任何内容
+        gaps = coverage.find_gaps(ws)
+        if gaps:
+            journal(ws, tr("检测到疑似漏段 {n} 处（第 {pages} 页），详见 easyread check", n=len(gaps), pages=sorted({g["page"] for g in gaps})))
+    except Exception as e:  # noqa: BLE001
+        log.warning("漏段检测失败 %s: %s", ws.id, e)
     journal(ws, tr("结束，{n} 页失败：{pages}", n=len(failed), pages=sorted(failed)) if failed else tr("结束，全部成功"))
     return failed
 

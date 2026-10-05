@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 from .config import WEB
+from .coverage import find_gaps
 from .paperdata import BLOCK_TYPES, block_shape_problem
 from .store import Workspace
 
@@ -99,4 +100,4 @@ def check(ws: Workspace) -> dict:
     problems += tex_problems(tex)
     pages = {p["n"] for p in paper.get("meta", {}).get("pages", [])}
     done = set(paper.get("translation", {}).get("done_pages", []))
-    return {"blocks": len(ids), "tex": len(tex), "missing_pages": sorted(pages - done), "problems": problems}
+    return {"blocks": len(ids), "tex": len(tex), "missing_pages": sorted(pages - done), "problems": problems, "gaps": find_gaps(ws)}

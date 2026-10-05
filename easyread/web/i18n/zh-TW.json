@@ -1105,5 +1105,10 @@
  "笔记里有图片时导出成 zip（含图片文件）。": "筆記裡有圖片時匯出成 zip（含圖片檔案）。",
  "请求不完整": "請求不完整",
  "（图片未导出）": "（圖片未匯出）",
- "（图片缺失）": "（圖片缺失）"
+ "（图片缺失）": "（圖片缺失）",
+ "疑似漏段 {n} 处：": "疑似漏段 {n} 處：",
+ "第 {page} 页疑似漏掉约 {chars} 字：“{snippet}”": "第 {page} 頁疑似漏掉約 {chars} 字：「{snippet}」",
+ "补救：可用 `easyread translate {id} --pages {a},{b}`（两页放同一批）重译，或用 `easyread blocks {id} --from 文件` 手动补。": "補救：可用 `easyread translate {id} --pages {a},{b}`（兩頁放同一批）重譯，或用 `easyread blocks {id} --from 檔案` 手動補。",
+ "漏段检查通过：正文每段都进了块": "漏段檢查通過：正文每一段都已收進區塊",
+ "检测到疑似漏段 {n} 处（第 {pages} 页），详见 easyread check": "偵測到疑似漏段 {n} 處（第 {pages} 頁），詳見 easyread check"
 }

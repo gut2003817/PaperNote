@@ -24,7 +24,7 @@ import threading
 import urllib.request
 from pathlib import Path
 
-from . import config, paperdata, pdfwork
+from . import config, coverage, paperdata, pdfwork
 from .checks import check
 from .library import Library, migrate_folder
 from .store import read_json, text_hash
@@ -178,7 +178,10 @@ def cmd_check(a):
     if r["problems"]:
         out("问题：\n" + "\n".join(f"- {p}" for p in r["problems"]))
         sys.exit(1)
-    out("检查通过")
+    for line in coverage.report_lines(a.id, r["gaps"]):  # 疑似漏段只提示不算失败（和“未完成页”一样）：可能是误报，要人看过原页再补
+        out(line)
+    if not r["gaps"]:
+        out("检查通过")
 
 
 def cmd_locate(a):
