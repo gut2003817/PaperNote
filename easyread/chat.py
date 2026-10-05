@@ -213,6 +213,7 @@ def _stream_claude(c: dict, text: str, cwd: Path, cancel, on_model=None, meter=N
     exe = engines.claude_path(c)
     if not exe:
         raise engines.EngineError(tr("找不到 Claude Code 命令（先装好并登录 Claude Code）"))
+    engines.guard("claude", c)
     args = [exe, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
             "--allowedTools", "Read", "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"]
     if c.get("model"):

@@ -1112,5 +1112,20 @@
  "漏段检查通过：正文每段都进了块": "Coverage check passed: every body paragraph made it into a block",
  "检测到疑似漏段 {n} 处（第 {pages} 页），详见 easyread check": "Suspected missing passages: {n} (pages {pages}); see `easyread check`",
  "不允许的主机名": "Host name not allowed",
- "不允许的请求来源": "Request origin not allowed"
+ "不允许的请求来源": "Request origin not allowed",
+ "{field} 不允许使用参数 {flag}（可用的参数只有：{allowed}）": "{field}: the option {flag} is not allowed (allowed options: {allowed})",
+ "{field} 只能填命令名 {names}，或这个命令的绝对路径（文件必须存在且可执行），不能带参数、特殊符号或相对路径：{value}": "{field} must be one of the command names {names}, or an absolute path to that command (the file must exist and be executable). Arguments, special characters and relative paths are not allowed: {value}",
+ "{field} 必须是 1 到 86400 的整数（秒）": "{field} must be an integer from 1 to 86400 (seconds)",
+ "{field} 必须是 true 或 false": "{field} must be true or false",
+ "{field} 必须是字符串": "{field} must be a string",
+ "{field} 必须是对象": "{field} must be an object",
+ "{field} 必须是数组（例如 [\"--model\", \"sonnet\"] 的形式），不能是 {kind}": "{field} must be an array (for example [\"--model\", \"sonnet\"]), not {kind}",
+ "{field} 的值不合法（只能含字母、数字和 . _ : / - [ ]，不能以 - 开头，最长 120 字）：{value}": "{field} is not valid (only letters, digits and . _ : / - [ ] are allowed, it cannot start with -, and it is at most 120 characters): {value}",
+ "{field} 的值不合法（只能是几个小写字母，例如 low、high）：{value}": "{field} is not valid (it must be a few lowercase letters, such as low or high): {value}",
+ "{field} 的每一项都必须是字符串：{value}": "{field}: every item must be a string: {value}",
+ "{field} 要把参数和值分成两项写，不支持 {flag}=值 的写法：{value}": "{field}: write the option and its value as two separate items; the {flag}=value form is not supported: {value}",
+ "{field} 里参数 {flag} 的值不合法：{value}": "{field}: the value of option {flag} is not valid: {value}",
+ "{field} 里没有这个设置项：{key}": "{field} has no such setting: {key}",
+ "{field} 里的 {value} 不是“参数 值”的形式（可用的参数只有：{allowed}）": "{field}: {value} is not in the \"option value\" form (allowed options: {allowed})",
+ "问 AI 的模型名单必须是对象数组": "The Ask AI model list must be an array of objects"
 }

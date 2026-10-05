@@ -17,7 +17,7 @@ import threading
 from pathlib import Path
 
 from .i18n import tr
-from . import codex_lean, netcheck, usage
+from . import cli_guard, codex_lean, netcheck, usage
 from .log import log
 
 
@@ -85,12 +85,31 @@ _CLAUDE_ARGS = ["--output-format", "stream-json", "--verbose", "--allowedTools",
                 "--disable-slash-commands", "--no-session-persistence"]
 
 
+def _cli_path(name: str, c: dict) -> str | None:
+    """command 不是“看起来就是该 CLI”的值（见 cli_guard）就当没找到：探测版本、测试、翻译、问 AI 都从这里取可执行文件。"""
+    cmd = c.get("command") or name
+    try:
+        cli_guard.check_command(name, cmd)
+    except ValueError as e:
+        log.warning("%s", e)
+        return None
+    return shutil.which(cmd)
+
+
 def claude_path(c: dict) -> str | None:
-    return shutil.which(c.get("command") or "claude")
+    return _cli_path("claude", c)
 
 
 def codex_path(c: dict) -> str | None:
-    return shutil.which(c.get("command") or "codex")
+    return _cli_path("codex", c)
+
+
+def guard(name: str, c: dict) -> None:
+    """起子进程前的防呆：extra_args、model 等不合法就不执行（和保存时同一套校验）。"""
+    try:
+        cli_guard.check_section(name, c, save=False)
+    except ValueError as e:
+        raise EngineError(str(e)) from None
 
 
 def _popen(args: list[str], cwd: Path):
@@ -103,6 +122,7 @@ def run_claude(c: dict, prompt: str, cwd: Path, cancel=None, meter=None) -> str:
     exe = claude_path(c)
     if not exe:
         raise EngineError(tr("找不到 Claude Code 命令：{cmd}（先装好并登录 Claude Code）", cmd=c.get("command") or "claude"))
+    guard("claude", c)
     args = [exe, "-p", *_CLAUDE_ARGS]
     if c.get("model"):
         args += ["--model", c["model"]]
@@ -139,6 +159,7 @@ def run_codex(c: dict, prompt: str, cwd: Path, images: list[Path], cancel=None, 
     exe = codex_path(c)
     if not exe:
         raise EngineError(tr("找不到 Codex 命令：{cmd}（先装好并登录 Codex CLI）", cmd=c.get("command") or "codex"))
+    guard("codex", c)
     lean = codex_lean.args() if c.get("lean") else []
     try:
         text, out = _codex_once(exe, c, prompt, cwd, images, cancel, lean)

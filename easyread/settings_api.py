@@ -1,12 +1,13 @@
 """设置页的保存类接口（POST）。server.py 按路径转过来，每个函数收请求体、返回要回给页面的 JSON。"""
 from __future__ import annotations
 
-from . import chat_models, config, engines, langs, openai_api
+from . import chat_models, cli_guard, config, engines, langs, openai_api
 from .i18n import tr
 
 
 def save_config(patch: dict) -> dict:
     patch.pop("library_dir", None)
+    cli_guard.check_patch(patch)  # command / extra_args 等会进子进程的值：一处不合法整个拒绝，不写盘
     if "page_cap" in patch and (type(patch["page_cap"]) is not int or patch["page_cap"] < 0):
         raise ValueError(tr("页数确认上限必须是非负整数"))
     if "target" in patch:

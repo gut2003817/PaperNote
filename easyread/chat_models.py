@@ -162,7 +162,9 @@ def listing(cfg: dict) -> dict:
 
 
 def sanitize(items: list[dict]) -> list[dict]:
-    """设置页提交的名单：去掉空项、补 id。"""
+    """设置页提交的名单：去掉空项、补 id。走本机 CLI 的项，model 等会变成命令行参数，不合法就整个拒绝（cli_guard）。"""
+    from . import cli_guard
+    cli_guard.check_chat_models(items or [])
     out, seen = [], set()
     for k, m in enumerate(items or []):
         e = m.get("engine")
