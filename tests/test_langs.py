@@ -58,6 +58,47 @@ class LangsTest(unittest.TestCase):
         with mock.patch("easyread.i18n.lang", lambda: "en"):
             self.assertEqual(langs.reply_lang({}), "英文（English）")
 
+    def test_zh_tw_target(self):
+        self.assertIn("zh-TW", langs.TARGETS)
+        self.assertEqual(langs.valid("zh-TW"), "zh-TW")
+        self.assertEqual(langs.prompt_name("zh-TW"), "繁體中文（台灣用語）")
+        self.assertEqual(langs.TARGETS["zh-TW"][2], "Traditional Chinese")
+        self.assertIn({"id": "zh-TW", "name": "繁體中文"}, langs.listing())
+        self.assertEqual(langs.of_paper({"target": "zh-TW"}, {"target": "ja"}), "zh-TW")
+        self.assertEqual(langs.of_paper({}, {"target": "zh-TW"}), "zh-TW")
+        self.assertEqual(langs.reply_lang({"target": "zh-TW"}), "繁體中文（台灣用語）")
+        self.assertEqual(langs.reply_lang({"title_zh": "旧论文"}), "中文")  # 旧论文仍按简体
+        with mock.patch("easyread.i18n.lang", lambda: "zh-TW"):
+            self.assertEqual(langs.reply_lang({}), "繁體中文（台灣用語）")
+        self.assertIn("台灣慣用詞", langs.reply_note({"target": "zh-TW"}))
+        self.assertEqual(langs.reply_note({"target": "zh"}), "")
+        self.assertEqual(langs.reply_note({"target": "ja"}), "")
+
+    def test_zh_tw_prompt(self):
+        set_meta(self.ws, target="zh-TW")
+        for text in (prompts.translate(self.ws, [1], "text", ""),
+                     prompts_en.fill(self.ws, [1], {"p1-1": "Hello"})):
+            self.assertIn("繁體中文（台灣用語）", text)
+            self.assertIn("台灣慣用詞", text)
+            self.assertIn("標準誤差", text)           # 繁体范例
+            self.assertNotIn("标准误差", text)         # 不能留简体范例，否则模型会照抄简体
+            self.assertNotIn("中文译文第一句", text)
+        text = prompts.translate(self.ws, [1], "text", "")
+        self.assertIn("字符串里的中文引号用「」", text)   # 引号约定：「」，不是 “”
+        self.assertNotIn("中文引号用“”或「」", text)
+        self.assertIn("「」", text)
+        self.assertIn("不超过 12 字的短标题", text)   # 中文规则：短标题按字数
+        self.assertNotIn("不超过 6 个词", text)
+        self.assertIn("此處辨識不清", text)
+
+    def test_zh_tw_other_prompts(self):
+        set_meta(self.ws, target="zh-TW")
+        note = {"anchor": "p1-1", "body": "这是什么意思？"}
+        self.assertIn("繁體中文（台灣用語）", prompts.answer(self.ws, note))
+        from easyread import chat
+        self.assertIn("台灣慣用詞", chat.prompt(self.ws, [{"role": "user", "content": "问题"}], None, "", "openai"))
+        self.assertIn("台灣慣用詞", chat.prompt(self.ws, [{"role": "user", "content": "问题"}], None, "", "openai", answer_style="ste100"))
+
     def test_first_translation_records_target(self):
         def run(cfg, prompt, cwd, images=None, cancel=None, meter=None):
             self.assertIn("译成韩语", prompt)

@@ -172,8 +172,9 @@ def prompt(ws: Workspace, messages: list[dict], anchor: str | None, quote: str, 
             if engine == "claude" else "")
     want, colors = wants_marks(ask)
     marks = _marks(ws, colors) if want else _marks_summary(ws)
+    meta = ws.load("paper").get("meta")
     style = (answer_styles.STE100_INSTRUCTIONS if answer_style == answer_styles.STE100
-             else "用" + langs.reply_lang(ws.load("paper").get("meta")) + "，直接、具体，能举例就举例。\n")  # i18n-ok
+             else "用" + langs.reply_lang(meta) + "，直接、具体，能举例就举例。\n") + langs.reply_note(meta)  # i18n-ok
     whole = _paper_context(ws) if answer_style == answer_styles.STE100 else ""
     return ("你在陪读者读一篇学术论文，回答他边读边冒出来的问题。\n" + style  # i18n-ok
             + "区分“论文里写了什么”和“你的补充解释”，论文里没有的内容不要说成是论文说的。"  # i18n-ok

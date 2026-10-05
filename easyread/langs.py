@@ -7,6 +7,7 @@ from __future__ import annotations
 # 代码 → (界面上显示的名字, 提示词里怎么称呼, 英文名)
 TARGETS = {
     "zh": ("中文", "中文", "Chinese"),  # i18n-ok 语言名
+    "zh-TW": ("繁體中文", "繁體中文（台灣用語）", "Traditional Chinese"),  # i18n-ok 语言名；字段仍叫 zh/title_zh，里面写繁体
     "ja": ("日本語", "日语（日本語）", "Japanese"),  # i18n-ok
     "ko": ("한국어", "韩语（한국어）", "Korean"),  # i18n-ok
     "es": ("Español", "西班牙语（Español）", "Spanish"),  # i18n-ok
@@ -49,6 +50,22 @@ def prompt_name(code: str) -> str:
     return TARGETS[valid(code)][1]
 
 
+def is_chinese(code: str | None) -> bool:
+    """译成中文（简体或繁体）：中文专属的提示词规则对两者都适用。"""
+    return code in ("zh", "zh-TW")
+
+
+# 译成/回答成繁体中文时加给模型的要求（翻译、问 AI、整理笔记共用）
+TW_STYLE = ("输出繁體中文，用台灣慣用詞與術語（軟體、檔案、資料夾、設定、資訊、網路、伺服器、程式、資料庫、演算法、品質、預設、匯入／匯出……），"  # i18n-ok 提示词
+            "不要出现簡體字，也不要用大陸用語（軟件、文件、信息、網絡、默認、質量）；"  # i18n-ok 提示词
+            "標點用全形「，。、：；？！」，引號用「」（內層用『』），不用 “” 和 ‘’；數字、單位、公式、程式碼、引用號 [n] 照原樣。")  # i18n-ok 提示词
+
+
+def reply_note(meta: dict | None) -> str:
+    """回答语言是繁体中文时，提示词里要多加的一句；其他语言返回空串。"""
+    return TW_STYLE + "\n" if reply_lang(meta) == prompt_name("zh-TW") else ""
+
+
 def listing() -> list[dict]:
     return [{"id": k, "name": v[0]} for k, v in TARGETS.items()]
 
@@ -61,4 +78,7 @@ def reply_lang(meta: dict | None) -> str:
     if meta.get("title_zh"):  # 1.3 以前译的论文没记语言，都是中文
         return "中文"  # i18n-ok 提示词
     from . import i18n
-    return "中文" if i18n.lang() == "zh" else "英文（English）"  # i18n-ok 提示词
+    ui = i18n.lang()
+    if ui == "zh-TW":  # 没翻过的论文，繁体界面下用繁体回答
+        return prompt_name("zh-TW")
+    return "中文" if ui == "zh" else "英文（English）"  # i18n-ok 提示词

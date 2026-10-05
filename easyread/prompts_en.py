@@ -74,7 +74,7 @@ def fill(ws: Workspace, pages: list[int], items: dict[str, object]) -> str:
     first = 1 in pages
     target = langs.of_paper(ws.load("paper").get("meta"))
     name = langs.prompt_name(target)
-    meta = ('  "meta": {"title_zh": "", "short_zh": "' + ("不超过 12 字的短标题" if target == "zh" else "不超过 6 个词的短标题") + '"},   // 论文英文标题：'
+    meta = ('  "meta": {"title_zh": "", "short_zh": "' + ("不超过 12 字的短标题" if langs.is_chinese(target) else "不超过 6 个词的短标题") + '"},   // 论文英文标题：'
             + json.dumps(ws.load("paper").get("meta", {}).get("title_en", ""), ensure_ascii=False) + "\n") if first else ""
     return (f"你在把一篇学术论文译成{name}。原文已经整理成块，这次只翻译第 {', '.join(map(str, pages))} 页上下面这些键对应的文字。\n\n"
             f"{_context(ws, pages, new_blocks=False)}\n\n{rules(target)}\n"
@@ -82,8 +82,8 @@ def fill(ws: Workspace, pages: list[int], items: dict[str, object]) -> str:
             + (f"- 英文里的 ‖ 是句子分界：译文在对应的句子交界处也插 ‖，个数和这条英文的一样。两句英文在{name}里要合成一句时，也在合并后最接近的位置插上。\n"
                if any(isinstance(v, str) and "‖" in v for v in items.values()) else "") + "\n"
             "输出格式：只输出一个 JSON 对象，不要任何别的文字。\n{\n" + meta +
-            '  "glossary": [{"en": "standard error", "zh": "' + ("标准误差" if target == "zh" else name + "译名") + '"}],   // 本批新出现的核心术语\n'
+            '  "glossary": [{"en": "standard error", "zh": "' + ({"zh": "标准误差", "zh-TW": "標準誤差"}.get(target) or name + "译名") + '"}],   // 本批新出现的核心术语\n'
             '  "checks": [{"anchor": "块 id", "quote": "译文里相关的几个字（可空）", "title": "一句话：哪里不对", "body": "具体说明和依据"}],   // 原文有问题时才写\n'
             '  "zh": {"键": "' + name + '译文", …}   // 下面每个键都要有，一个不漏\n}\n'
-            "注意 JSON 里 TeX 的反斜杠要写两个（\\\\frac、\\\\text、\\\\bar）。" + ("字符串里的中文引号用“”或「」。" if target == "zh" else "字符串里的英文双引号要转义。") + "\n\n"
+            "注意 JSON 里 TeX 的反斜杠要写两个（\\\\frac、\\\\text、\\\\bar）。" + ({"zh": "字符串里的中文引号用“”或「」。", "zh-TW": "字符串里的中文引号用「」。"}.get(target) or "字符串里的英文双引号要转义。") + "\n\n"
             "要翻译的内容（键 → 英文）：\n" + json.dumps(items, ensure_ascii=False, indent=1))

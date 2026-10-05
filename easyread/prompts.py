@@ -60,10 +60,30 @@ _SCHEMA_SWAP = [
 ]
 
 
+# 繁体中文（台湾用语）：仍是中文，语序、断句、短标题字数的规则照旧，只把简体的范例、固定说法和引号换成繁体
+_TW_RULES_SWAP = [
+    ("读起来要像中文母语者写的学术文字。", "读起来要像台灣的中文母语者写的学术文字。"),
+    ("首次出现的核心术语写“中文（English）”。已有术语表必须遵守。统计学里 standard error 译“标准误差”。", "首次出现的核心术语写「繁體中文譯名（English）」，譯名用台灣學界通行的說法。已有术语表必须遵守。统计学里 standard error 译「標準誤差」。"),
+    ("表头译成中文", "表头译成繁體中文"),
+    ("看不清的地方写“此处识别不清，请核对原文第 N 页”", "看不清的地方写「此處辨識不清，請核對原文第 N 頁」"),
+]
+_TW_SCHEMA_SWAP = [
+    ('{"en": "standard error", "zh": "标准误差"}', '{"en": "standard error", "zh": "標準誤差"}'),
+    ('"zh":"中文译文第一句。‖第二句。"', '"zh":"繁體中文譯文第一句。‖第二句。"'),
+    ('"zh":"相互独立的题目"', '"zh":"相互獨立的題目"'),
+    ('"head":[["","题目数","…"]]', '"head":[["","題目數","…"]]'),
+    ('"caption_zh":"图 1：…"', '"caption_zh":"圖 1：…"'),
+    ('"zh":"参考文献"', '"zh":"參考文獻"'),
+    ('字符串里的中文引号用“”或「」，不要出现没转义的英文双引号 "。', '字符串里的中文引号用「」，不要出现没转义的英文双引号 "。'),
+]
+
+
 def _swap(text: str, pairs, target: str) -> str:
     if target == "zh":
         return text
     name = langs.prompt_name(target)
+    if target == "zh-TW":
+        pairs = _TW_RULES_SWAP if pairs is _RULES_SWAP else _TW_SCHEMA_SWAP
     for a, b in pairs:
         text = text.replace(a, b.replace("{L}", name))
     return text
@@ -73,6 +93,9 @@ def rules(target: str = "zh") -> str:
     if target == "zh":
         return RULES
     name = langs.prompt_name(target)
+    if target == "zh-TW":
+        return (_swap(RULES, _RULES_SWAP, target) +
+                f"\n- 译文语言是{name}：zh、caption_zh、image_zh、title_zh 这些字段名是历史叫法（简体时代留下的），里面一律写{name}。{langs.TW_STYLE}")
     return (_swap(RULES, _RULES_SWAP, target) +
             f"\n- 译文语言是{name}：zh、caption_zh、image_zh、title_zh 这些字段名是历史叫法，里面一律写{name}，不要写中文。")
 
@@ -236,7 +259,7 @@ def answer(ws: Workspace, note: dict) -> str:
             + (f"读者选中的{'英文原文' if note.get('side') == 'en' else '原话'}：「{note.get('quote')}」\n" if note.get("quote") else "")
             + f"读者的问题：{note.get('body', '')}\n\n"
             "需要时可以用 Read 读当前目录的 paper.json 看全文。请直接回答：用" + langs.reply_lang(paper.get("meta")) + "，具体、讲清楚，能举例就举例，"
-            "区分“论文里写了什么”和“你的补充解释”。行内公式用 $TeX$，段落之间空一行。只输出回答正文，不要客套。")
+            "区分“论文里写了什么”和“你的补充解释”。行内公式用 $TeX$，段落之间空一行。只输出回答正文，不要客套。" + ("\n" + langs.reply_note(paper.get("meta")) if langs.reply_note(paper.get("meta")) else ""))
 
 
 def retranslate(ws: Workspace, key: str, hint: str) -> tuple[str, tuple | None]:
