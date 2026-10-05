@@ -13,6 +13,9 @@
 - 新增 `README.zh-TW.md`；桌面版（Electron）能分辨繁体地区，启动报错用繁体。
 - 译文语言的默认值改成繁体（本分支）；原版的简体 README 移到 `README.zh-CN.md`，`README.md` 改为本分支的说明。
 
+**匯出带划线的 PDF**
+- 把网页上的划线、下划线（含笔记内文）写成标准 PDF 的 Highlight／Underline 注释，另存成新的 PDF 副本，不改 `source.pdf`。入口：阅读页“导出笔记”对话框，或 `easyread export-pdf <论文ID> [--out 路径]`。译文上的划线靠句子对齐（`sents`）对应到整句英文，原文上的划线按原话精确标，没有对齐或译文被改过的段落标整段；找不到对应位置的会列出页码和引文，不会静默丢掉。一次性导出，不是双向同步。
+
 **漏段检测**
 - 同一段落跨页时，两批翻译交接处可能让整段原文没进任何块（上游问题：提示词只看上一段结尾有没有标点）。新增 `easyread check <论文ID>` 的漏段检测：列出页码、前 80 字和约略字数，并提示用 `easyread translate <id> --pages N-1,N` 重译或 `easyread blocks` 手动补；翻译完成时 job.log 也会提示。只检测，不自动补译；用 `blocks` 补完后要再跑 `easyread locate <id>`。
 
