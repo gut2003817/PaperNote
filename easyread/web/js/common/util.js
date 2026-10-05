@@ -20,7 +20,7 @@ window.PR = window.PR || {};
   };
 
   /* 译文语言的名字跟着界面语言写：中文界面“日语”，英文界面“Japanese” */
-  PR.TARGETS = [["zh", PR.t("中文")], ["ja", PR.t("日语")], ["ko", PR.t("韩语")], ["es", PR.t("西班牙语")], ["fr", PR.t("法语")], ["de", PR.t("德语")]];
+  PR.TARGETS = [["zh", PR.t("中文")], ["zh-TW", PR.t("繁体中文")], ["ja", PR.t("日语")], ["ko", PR.t("韩语")], ["es", PR.t("西班牙语")], ["fr", PR.t("法语")], ["de", PR.t("德语")]];
   PR.targetName = (code) => (PR.TARGETS.find(([k]) => k === code) || PR.TARGETS[0])[1];
 
   /* 论文标题哪个当主标题：译文语言和界面语言一样时用译文标题（中文界面看中文译文），
@@ -65,7 +65,7 @@ window.PR = window.PR || {};
     if (s < 3600) return PR.t("{n} 分钟前", { n: Math.floor(s / 60) });
     if (s < 86400) return PR.t("{n} 小时前", { n: Math.floor(s / 3600) });
     if (s < 86400 * 30) return PR.t("{n} 天前", { n: Math.floor(s / 86400) });
-    return new Date(iso).toLocaleDateString(PR.lang === "en" ? "en-US" : "zh-CN");
+    return new Date(iso).toLocaleDateString(PR.lang === "en" ? "en-US" : PR.lang === "zh-TW" ? "zh-TW" : "zh-CN");
   };
 
   PR.uid = (p) => (p || "n") + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);

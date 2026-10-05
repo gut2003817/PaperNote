@@ -40,6 +40,23 @@ html[lang="en"] {
   --serif-zh: "Source Serif 4", "Source Serif Pro", Charter, "Iowan Old Style", Georgia, "Noto Serif SC", "Source Han Serif SC", "Songti SC", STSong, serif;
   --sans-zh: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif;
 }
+/* 繁体中文（台湾用语）：界面和译文都用繁体字型，否则浏览器会拿简体字型去画繁体字（缺字、字形不对）。
+   先写界面语言，再写译文语言：译文语言的规则在后面，优先。 */
+html[lang="zh-TW"] {
+  --serif-zh: "Noto Serif TC", "Source Han Serif TC", "Songti TC", "PMingLiU", "MingLiU", serif;
+  --sans-zh: "Noto Sans TC", "Source Han Sans TC", "PingFang TC", "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif;
+  --serif-en: "Source Serif 4", "Source Serif Pro", Charter, "Iowan Old Style", Georgia, "Noto Serif TC", serif;
+  --ui: "Noto Sans TC", "Segoe UI", "PingFang TC", "Microsoft JhengHei UI", system-ui, sans-serif;
+}
+html[data-target="zh-TW"] {
+  --serif-zh: "Noto Serif TC", "Source Han Serif TC", "Songti TC", "PMingLiU", "MingLiU", serif;
+  --sans-zh: "Noto Sans TC", "Source Han Sans TC", "PingFang TC", "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif;
+}
+/* 繁体界面、简体译文：译文仍用简体字型 */
+html[lang="zh-TW"][data-target="zh"] {
+  --serif-zh: "Noto Serif SC", "Source Han Serif SC", "Source Han Serif CN", "Songti SC", "STSong", serif;
+  --sans-zh: "Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+}
 /* 译文不是中文时换正文字体（变量名沿用 -zh，指“译文”） */
 html[data-target="ja"] { --serif-zh: "Noto Serif JP", "Source Han Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif; --sans-zh: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif; }
 html[data-target="ko"] { --serif-zh: "Noto Serif KR", "Source Han Serif KR", AppleMyungjo, Batang, serif; --sans-zh: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
