@@ -216,6 +216,7 @@
  "不认识的模型来源：{engine}": "Unknown model source: {engine}",
  "丢掉": "Discard",
  "中文": "Chinese",
+ "繁体中文": "Traditional Chinese",
  "从接口读出它支持的全部模型": "Fetch all models the API supports",
  "从源码运行的：下载新版 zip 解压后双击 start.cmd（macOS / Linux 运行 ./start.sh），或者在项目目录里 git pull；用 pip 装的：pip install -U easyread。论文和设置在数据目录里，不受影响。": "Running from source: download the new zip, unzip it and double-click start.cmd (on macOS / Linux run ./start.sh), or run git pull in the project folder. Installed with pip: pip install -U easyread. Papers and settings live in the data folder and are not affected.",
  "付费": "Paid",
