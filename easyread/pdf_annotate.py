@@ -338,7 +338,7 @@ def _map_range(pages: _Pages, segs, en_n: str, na: int, nb: int):
     return {pn: sorted(v) for pn, v in out.items()}, ratio
 
 
-def _lines(chars, indices) -> list[list[float]]:
+def _lines(chars, indices, clip: bool = True) -> list[list[float]]:
     """按原页字符顺序把选中的字符并成一行一个框（页面坐标，按页宽高归一化，左上为原点）；
     同一行里横向断开很远（跨栏）的也分开。"""
     boxes = [chars[i][1:5] for i in indices if chars[i][3] > chars[i][1] and chars[i][4] > chars[i][2]]
@@ -357,7 +357,27 @@ def _lines(chars, indices) -> list[list[float]]:
                 out[-1] = [min(cur[0], b[0]), min(cur[1], b[1]), max(cur[2], b[2]), max(cur[3], b[3])]
                 continue
         out.append(list(b))
-    return out
+    return [_clip_to_neighbours(box, chars) for box in out] if clip else out
+
+
+def _clip_to_neighbours(box: list[float], chars) -> list[float]:
+    """松字框比行距高，框会伸进上下相邻的行（不管那行有没有被标）：和相邻行的字框重叠的部分从中间分开，
+    标示不会盖到别行的字，上下两行都标时也不会叠出一道深色。"""
+    x0, y0, x1, y1 = box
+    h = y1 - y0
+    cy = (y0 + y1) / 2
+    top, bottom = y0, y1
+    for c in chars:
+        if c[3] <= x0 or c[1] >= x1 or c[4] <= c[2] or not c[0].strip():
+            continue
+        ccy = (c[2] + c[4]) / 2
+        if ccy < cy - 0.35 * h and c[4] > y0:  # 上一行伸下来
+            top = max(top, (c[4] + y0) / 2)
+        elif ccy > cy + 0.35 * h and c[2] < y1:  # 下一行伸上来
+            bottom = min(bottom, (c[2] + y1) / 2)
+    if bottom - top < h * 0.5:  # 挤得太扁（上下标、公式），宁可保留原框
+        return box
+    return [x0, top, x1, bottom]
 
 
 # ---------- 坐标：归一化页面坐标（pdfwork._char_box 的逆运算） → PDF 用户空间 ----------
@@ -421,9 +441,10 @@ def _appearance(writer, subtype: str, quads: list[list[float]], rect: list[float
     if subtype == "/Highlight":
         tint = tuple(1 - HIGHLIGHT_TINT * (1 - c) for c in rgb)
         ops.append("/GS0 gs " + " ".join(_fmt(c) for c in tint) + " rg")
-        for q in quads:
+        for q in quads:  # 所有行放进同一条路径一次填充：相邻两行的接缝不会因为抗锯齿叠出细线
             ul, ur, ll, lr = (q[0], q[1]), (q[2], q[3]), (q[4], q[5]), (q[6], q[7])
-            ops.append(f"{_fmt(ul[0])} {_fmt(ul[1])} m {_fmt(ur[0])} {_fmt(ur[1])} l {_fmt(lr[0])} {_fmt(lr[1])} l {_fmt(ll[0])} {_fmt(ll[1])} l h f")
+            ops.append(f"{_fmt(ul[0])} {_fmt(ul[1])} m {_fmt(ur[0])} {_fmt(ur[1])} l {_fmt(lr[0])} {_fmt(lr[1])} l {_fmt(ll[0])} {_fmt(ll[1])} l h")
+        ops.append("f")
     else:
         ops.append(" ".join(_fmt(c) for c in rgb) + " RG")
         for q in quads:
@@ -517,7 +538,8 @@ def plan(root: Path) -> tuple[list[dict], list[dict], int]:
             continue
         per_page = {}
         for pn, ids in chosen.items():
-            boxes = _lines(pages.stream(pn)[2], ids)
+            # 底线按松字框的下沿定位，不裁；荧光要裁掉伸进别行的部分
+            boxes = _lines(pages.stream(pn)[2], ids, clip=note.get("style") != "underline")
             if boxes:
                 per_page[pn] = boxes
         if not per_page:

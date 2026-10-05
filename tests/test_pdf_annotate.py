@@ -352,7 +352,7 @@ class AnnotationTest(PdfAnnotateBase):
             data = ap.get_data().decode()
             if a["/Subtype"] == "/Highlight":
                 self.assertEqual(ap["/Resources"]["/ExtGState"]["/GS0"]["/BM"], "/Multiply")
-                self.assertIn(" f", data)
+                self.assertRegex(data, r"(?m)^f$")  # 所有行一条路径、一次填充
             else:
                 self.assertIn(" S", data)
 
