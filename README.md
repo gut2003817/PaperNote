@@ -36,6 +36,7 @@ EASYREAD_LANG=zh-TW .venv/bin/python -m easyread serve --open
 ## 已知限制
 
 - 跨頁段落漏譯是上游的 bug，本版**只偵測、沒有根治**；偵測的誤報率只在一篇論文上驗證過。
+- 本版**移除了上游的 GitHub Actions 設定**（`.github/workflows/` 的 `release.yml`、`test.yml`），所以沒有自動測試與自動打包安裝包；測試請在本機執行 `.venv/bin/python -m pytest tests -q`。
 - ASD-STE100 問答模式的提示詞寫死「只輸出中文」，不看譯文語言。
 - `docs/`、`skill/` 內的文件仍是簡體。
 - **桌面版（Electron）與上游的安裝包沒有針對本版驗證**，請從原始碼執行。IPv6（`[::1]`）也只驗證了 Host 標頭會被接受，沒有真的走 IPv6 連線。
