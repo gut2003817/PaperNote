@@ -1110,5 +1110,7 @@
  "第 {page} 页疑似漏掉约 {chars} 字：“{snippet}”": "Page {page}: about {chars} characters seem to be missing: \"{snippet}\"",
  "补救：可用 `easyread translate {id} --pages {a},{b}`（两页放同一批）重译，或用 `easyread blocks {id} --from 文件` 手动补。": "Fix: re-translate with `easyread translate {id} --pages {a},{b}` (both pages in the same batch), or add them by hand with `easyread blocks {id} --from FILE`.",
  "漏段检查通过：正文每段都进了块": "Coverage check passed: every body paragraph made it into a block",
- "检测到疑似漏段 {n} 处（第 {pages} 页），详见 easyread check": "Suspected missing passages: {n} (pages {pages}); see `easyread check`"
+ "检测到疑似漏段 {n} 处（第 {pages} 页），详见 easyread check": "Suspected missing passages: {n} (pages {pages}); see `easyread check`",
+ "不允许的主机名": "Host name not allowed",
+ "不允许的请求来源": "Request origin not allowed"
 }

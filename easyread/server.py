@@ -47,6 +47,48 @@ class Handler(BaseHTTPRequestHandler):
     app: App
     protocol_version = "HTTP/1.1"
 
+    # ---------- Host / Origin 校验（防 DNS rebinding） ----------
+    # 放在 parse_request：BaseHTTPRequestHandler.handle_one_request 对所有方法（GET/HEAD/POST/OPTIONS/未知方法）
+    # 和 WebSocket 握手都先走它，返回 False 就不会再分发到 do_*。
+    def _allowed_hosts(self) -> set[str]:
+        port = self.server.server_address[1]  # 实际绑定的端口（可能是配置里的、也可能是回退的随机端口）
+        return {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+
+    def _host_ok(self) -> bool:
+        hosts = self.headers.get_all("Host") or []
+        return len(hosts) == 1 and hosts[0].lower() in self._allowed_hosts()
+
+    def _origin_ok(self) -> bool:
+        """没有 Origin（curl、命令行、同源导航）放行；有就必须是本机地址 + 实际端口，完全相等。"""
+        origins = self.headers.get_all("Origin") or []
+        if not origins:
+            return True
+        return len(origins) == 1 and origins[0].lower() in {f"http://{h}" for h in self._allowed_hosts()}
+
+    def _reject(self, error: str):
+        # 不回显请求里的 Host / Origin，也不带任何论文数据或 token
+        body = json.dumps({"error": error}, ensure_ascii=False).encode("utf-8")
+        self.close_connection = True
+        self.send_response(403)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def parse_request(self) -> bool:
+        if not super().parse_request():
+            return False
+        if not self._host_ok():
+            self._reject(tr("不允许的主机名"))
+            return False
+        if (self.command not in ("GET", "HEAD", "OPTIONS") or wsock.is_upgrade(self.headers)) and not self._origin_ok():
+            self._reject(tr("不允许的请求来源"))
+            return False
+        return True
+
     def log_message(self, fmt, *args):
         if args and str(args[1]).startswith(("4", "5")):
             sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
@@ -352,10 +394,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _presence(self):
         """页面开着就一直连着这条 WebSocket；断开就是页面关了（见 presence.py）。"""
-        host = self.headers.get("Host") or ""
-        if self.headers.get("Origin") not in (None, f"http://{host}"):  # 别的网站不能来占着
-            self.close_connection = True
-            return self._json(403, {"error": "bad origin"})
+        if not self._origin_ok():  # 别的网站不能来占着（parse_request 已先验过 Host，这里再保险一次）
+            return self._reject(tr("不允许的请求来源"))
         p = self.app.presence
         self.app.location.enter_page()
         try:
