@@ -416,6 +416,10 @@ class CliTest(PdfAnnotateBase):
         with self.assertRaises(SystemExit):
             self.run_cli(self.root / "source.pdf", force=True)
         self.assertEqual(hashlib.sha256((self.root / "source.pdf").read_bytes()).hexdigest(), self.sha)
+        before = sorted(p.name for p in self.root.iterdir())
+        with self.assertRaises(SystemExit):  # 论文目录里也不写
+            self.run_cli(self.root)
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()), before)
 
     def test_writes_and_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as d:

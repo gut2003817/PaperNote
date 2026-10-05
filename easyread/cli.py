@@ -205,6 +205,8 @@ def cmd_export_pdf(a):
         target = target / pdf_annotate.filename(ws.root)
     if target.resolve() == src.resolve() or (target.exists() and src.exists() and os.path.samefile(target, src)):
         sys.exit("拒绝：不能写到原始的 source.pdf，请换一个输出路径")
+    if target.resolve().is_relative_to(ws.root.resolve()):
+        sys.exit("拒绝：不要写进文献库的论文目录，请换一个输出路径")
     if target.exists() and not a.force:
         sys.exit(f"已存在：{target}（要覆盖请加 --force）")
     try:
