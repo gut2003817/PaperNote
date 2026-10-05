@@ -50,6 +50,7 @@
     if (tab === "paper") {
       const body = (S.reader.paper_note || {}).body || "";
       h += '<div class="np-paper"><div class="np-tools"><span class="hint">' + PR.t("整篇的感悟、总结、待办。自动保存。") + '</span><span class="grow"></span>' + PR.noteHelpButtons() +
+        (!preview && PR.store.mode === "server" ? '<button class="btn sm" data-np-act="img" title="' + PR.t("插入图片（也可以直接粘贴截图或拖进来）") + '">' + PR.icon("image", "sm") + PR.t("图片") + "</button>" : "") +
         '<button class="btn sm' + (preview ? " on" : "") + '" data-np-act="preview">' + (preview ? PR.t("编辑") : PR.t("预览")) + "</button></div>" +
         (preview ? '<div class="np-preview">' + (body ? PR.mdBlocks(body) : '<p class="hint">' + PR.t("还没有写。") + "</p>") + "</div>"
           : '<textarea id="paperNote" placeholder="' + PR.t("读完这篇，你怎么看？&#10;&#10;可以写：核心论点、我同意/不同意的地方、能用到哪里、还没搞懂的问题……&#10;支持 $公式$、**粗体**，空行分段。") + '">' + PR.esc(body) + "</textarea>") + PR.noteHelpBox() + "</div>";
@@ -103,7 +104,7 @@
   panel().addEventListener("focusout", (e) => {
     if (e.target.id === "paperNote") savePaperNote.flush();
     if (!e.target.matches(".card textarea")) return;
-    setTimeout(() => { const card = e.target.closest(".card"); if (card && card.isConnected && !card.contains(document.activeElement) && editing === card.dataset.note) stopEditing(); }, 150);
+    setTimeout(() => { const card = e.target.closest(".card"); if (card && card.isConnected && !card.contains(document.activeElement) && editing === card.dataset.note && !(PR.noteImgBusy && PR.noteImgBusy())) stopEditing(); }, 150);
   });
   panel().addEventListener("click", (e) => {
     const np = e.target.closest("[data-np]");
@@ -115,6 +116,7 @@
       const a = act.dataset.npAct;
       if (a === "close") PR.toggleNotesPanel(false);
       if (a === "md") PR.openExport();
+      if (a === "img") PR.pickNoteImage && PR.pickNoteImage(PR.$("#paperNote"));
       if (a === "preview") { savePaperNote.flush(); preview = !preview; PR.renderNotesPanel(); }
       if (a === "add") { const id = (PR.currentBlock && PR.currentBlock()) || PR.readingBlock(); if (PR.blockById[id]) PR.startNote({ anchor: id }); }
       return;

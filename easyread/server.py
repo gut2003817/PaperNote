@@ -1,17 +1,20 @@
 """本地服务：只监听 127.0.0.1。文献库页、阅读页、数据接口、导入、后台任务。"""
 from __future__ import annotations
 
+import io
 import json
 import mimetypes
 import os
+import re
 import sys
 import threading
+import zipfile
 
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import __version__, answer_styles, figures, chat, chat_models, chat_store, cli_models, config, detect, engines, i18n, langs, notehelp, open_link, paperdata, pdfwork, prefs, settings_api, trash, library_api, translate_api, updates, usage, wsock
+from . import __version__, answer_styles, figures, chat, chat_models, chat_store, cli_models, config, detect, engines, i18n, langs, note_images, notehelp, open_link, paperdata, pdfwork, prefs, settings_api, trash, library_api, translate_api, updates, usage, wsock
 from .log import log, tail
 from .jobs import Jobs
 from .library import Library
@@ -87,6 +90,68 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def _note_image(self, ws, name: str):
+        """笔记图片：文件名必须完全符合 note_images.NAME_RE；类型由扩展名定（存的时候已按文件头验过），禁止嗅探。"""
+        path = note_images.path_of(ws.root, name)
+        if not path:
+            return self._json(404, {"error": "not found"})
+        body = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}[name.rsplit(".", 1)[1]])
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=86400")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _note_image_upload(self, ws):
+        """请求体就是图片字节。先看 Content-Length：超过上限的不读进内存（读掉丢弃一部分，免得连接上残留数据）。"""
+        try:
+            n = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            raise ValueError(tr("请求不完整")) from None
+        if n < 0:
+            raise ValueError(tr("请求不完整"))
+        if n > note_images.MAX_BYTES:
+            self.close_connection = True
+            left = n if n <= 64 * 1024 * 1024 else 0
+            while left > 0:
+                chunk = self.rfile.read(min(65536, left))
+                if not chunk:
+                    break
+                left -= len(chunk)
+            return self._json(413, {"error": tr("图片太大（上限 {mb} MB）", mb=note_images.MAX_BYTES // 1024 // 1024)})
+        data = self.rfile.read(n) if n else b""
+        if len(data) != n:
+            raise ValueError(tr("请求不完整"))
+        name = note_images.save(ws.root, data)  # 内容不合格抛 ValueError，回 400
+        return self._json(200, {"name": name, "md": f"![](note-images/{name})"})
+
+    def _notes_zip(self, ws, body: dict):
+        """笔记 Markdown 里引用了图片：打成 zip（notes.md + note-images/），相对路径不会断。"""
+        md = str(body.get("md") or "")
+        files = {}
+        for name in note_images.used_in([md]):
+            p = note_images.path_of(ws.root, name)
+            if p:
+                files[name] = p
+        md = note_images.MD_RE.sub(lambda m: m.group(0) if m.group(1) in files else tr("（图片缺失）"), md)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("notes.md", md.encode("utf-8"), compress_type=zipfile.ZIP_DEFLATED)
+            for name, p in files.items():
+                z.write(p, f"{note_images.DIR}/{name}", compress_type=zipfile.ZIP_STORED)
+        filename = (re.sub(r'[\\/:*?"<>|\r\n]', "", str(body.get("stem") or "")) or "notes") + ".zip"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Length", str(buf.tell()))
+        self.send_header("Content-Disposition", f"attachment; filename=\"notes.zip\"; filename*=UTF-8''{quote(filename)}")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(buf.getvalue())
 
     def _chat(self, ws, body: dict):
         """流式回答：一行一个 JSON，{"t": 片段} … 最后 {"done": true, "id": …} 或 {"error": …}。"""
@@ -266,6 +331,8 @@ class Handler(BaseHTTPRequestHandler):
                     w = 1000
                 variant = pdfwork.page_variant(ws.root, rel, w)
                 return self._file(variant or _safe(ws.root, rel), cache=True)
+            if ws and rel.startswith(note_images.DIR + "/"):  # 笔记图片：文件名走严格白名单，其余 404
+                return self._note_image(ws, rel[len(note_images.DIR) + 1:])
             if ws and (rel.split("/", 1)[0] in ("pages", "figures") or rel == "source.pdf"):
                 return self._file(_safe(ws.root, rel), cache=rel != "source.pdf")
         return self._json(404, {"error": "not found"})
@@ -344,7 +411,11 @@ class Handler(BaseHTTPRequestHandler):
             if not ws:
                 return self._json(404, {"error": tr("没有这篇论文")})
             action = parts[4]
+            if action == "note-image":  # 请求体是图片字节，不是 JSON
+                return self._note_image_upload(ws)
             body = json.loads(self._body() or b"{}")
+            if action == "notes-zip":
+                return self._notes_zip(ws, body)
             if action == "chat" and len(parts) > 5:
                 sub, tid = parts[5], body.get("thread", "")
                 if sub == "pin":

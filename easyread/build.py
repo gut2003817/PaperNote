@@ -10,12 +10,15 @@ import json
 import re
 from pathlib import Path
 
-from . import i18n
+from . import i18n, note_images
 from .config import WEB
 from .store import Workspace
 
 _LINK = re.compile(r'<link rel="stylesheet" href="/web/([^"]+)"\s*/?>')
 _SCRIPT = re.compile(r'<script src="/web/([^"]+)"></script>')
+
+
+_MIME = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
 
 
 def _data_uri(path: Path, mime: str) -> str:
@@ -45,6 +48,9 @@ def build(ws: Workspace, out: Path | None = None, assets: Path | None = None, ex
     paper = ws.load("paper")
     images = {}
     rels = [p["img"] for p in paper.get("meta", {}).get("pages", [])] + [b["src"] for b in paper.get("blocks", []) if b.get("src")]
+    # 笔记里引用的图片（用户笔记、论文笔记、AI 讨论里出现的 note-images/xxx）；只收符合严格文件名、真实存在的普通文件
+    mentioned = note_images.used_in([json.dumps(ws.load(n), ensure_ascii=False) for n in ("reader", "discussion")])
+    rels += [f"{note_images.DIR}/{n}" for n in mentioned if note_images.path_of(ws.root, n)]
     for rel in rels:
         src = ws.root / rel
         if not src.exists():
@@ -55,7 +61,7 @@ def build(ws: Workspace, out: Path | None = None, assets: Path | None = None, ex
             dst.write_bytes(src.read_bytes())
             images[rel] = f"{assets.name}/{dst.name}"
         else:
-            images[rel] = _data_uri(src, "image/webp")
+            images[rel] = _data_uri(src, _MIME.get(src.suffix.lower(), "image/webp"))
     data = {n: ws.load(n) for n in ("discussion", "reader", "layout", "item")}
     data.update({"paper": paper, "images": images}, **(extra or {}))
     payload = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")

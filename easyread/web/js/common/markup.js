@@ -85,13 +85,28 @@
     });
   }
 
+  /* 笔记图片：只认严格的相对形式 ![alt](note-images/<32 位小写十六进制>.png|jpg|webp|gif)。
+     其余（http 外链、javascript:、带 .. 的路径……）一律当普通文字，不渲染成图片，避免追踪和外泄。
+     src 由 PR.noteImageSrc 决定（服务模式指向本地接口，离线版指向内嵌的图）；没定义时用相对路径。 */
+  const NOTE_IMG = /!\[([^\]\n]*)\]\(note-images\/([0-9a-f]{32}\.(?:png|jpg|webp|gif))\)/g;
+  function noteImages(escaped, imgs) {
+    return escaped.replace(NOTE_IMG, (m, alt, name) => {
+      const src = PR.noteImageSrc ? PR.noteImageSrc(name) : "note-images/" + name;
+      if (!src) return m;
+      imgs.push('<img class="note-img" loading="lazy" alt="' + alt + '" src="' + PR.esc(src) + '">');  // alt 已经过 PR.esc
+      return "\uE003" + (imgs.length - 1) + "\uE004";
+    });
+  }
+
   function inline(text, opts) {
-    let s = blockLabel(PR.esc(text).replace(/\\\$/g, "$"));
+    const imgs = [];
+    let s = noteImages(PR.esc(text), imgs);
+    s = blockLabel(s.replace(/\\\$/g, "$"));
     s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
     s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
     if (opts.cite !== false) s = citeLinks(s);
     if (opts.xref !== false) s = xrefLinks(s);
-    return s.replace(/\n/g, "<br>");
+    return s.replace(/\n/g, "<br>").replace(/\uE003(\d+)\uE004/g, (m, i) => (imgs[i] != null ? imgs[i] : m));
   }
 
   /* 一行/一段文字 -> HTML */
@@ -220,6 +235,6 @@
   /* 去掉标记的纯文字，给目录、列表摘要用 */
   PR.plain = (text) => {
     const saved = tokens(String(text || ""), false);
-    return saved.text.replace(saved.inline, (m, i) => saved.values[i].text).replace(/\*\*|`/g, "");
+    return saved.text.replace(saved.inline, (m, i) => saved.values[i].text).replace(NOTE_IMG, "").replace(/\*\*|`/g, "");
   };
 })(window.PR);

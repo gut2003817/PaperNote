@@ -25,7 +25,7 @@
     dlg.querySelector(".dialog").innerHTML = "<h2>" + PR.t("导出笔记") + "</h2><div class=\"exp-opts\">" +
       KINDS.map(([k, l]) => '<label><input type="checkbox" data-exp="' + k + '"' + (saved[k] ? " checked" : "") + ">" + l +
         (c[k] != null ? '<span class="n">' + PR.t("{n} 条", { n: c[k] }) + "</span>" : "") + "</label>").join("") +
-      '</div><p class="hint">' + PR.t("导出成 Markdown，按原文章节顺序排，可以直接放进 Obsidian、Notion。") + "</p>" +
+      '</div><p class="hint">' + PR.t("导出成 Markdown，按原文章节顺序排，可以直接放进 Obsidian、Notion。笔记里有图片时导出成 zip（含图片文件）。") + "</p>" +
       '<div class="actions"><button class="btn" data-exp-close>' + PR.t("取消") + '</button><button class="btn primary" data-exp-go>' + PR.t("导出") + "</button></div>";
     dlg.classList.add("open");
   };
@@ -46,9 +46,24 @@
       }
       chat = data.threads ? data.threads.flatMap((t) => t.messages || []) : data.messages || [];
     }
-    const text = PR.notesMarkdown(pick, chat);
+    let text = PR.notesMarkdown(pick, chat);
     const stem = ((S.paper.meta || {}).short_zh || (S.paper.meta || {}).title_zh || PR.t("论文")).replace(/[\\/:*?"<>|]/g, "");
-    const a = PR.el("a", { href: URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" })), download: stem + PR.t("-笔记.md") });
+    let blob = new Blob([text], { type: "text/markdown;charset=utf-8" }), name = stem + PR.t("-笔记.md");
+    const IMG = /!\[[^\]\n]*\]\(note-images\/[0-9a-f]{32}\.(?:png|jpg|webp|gif)\)/g;
+    if (IMG.test(text)) {  // 笔记里有图：Markdown 单文件会留下断掉的图片链接，改导出 zip（notes.md + note-images/）
+      IMG.lastIndex = 0;
+      if (PR.store.mode === "server") {
+        try {
+          const r = await fetch("/api/p/" + PR.pid + "/notes-zip", { method: "POST", headers: { "Content-Type": "application/json", "X-Token": PR.token || "" }, body: JSON.stringify({ md: text, stem }) });
+          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+          blob = await r.blob(); name = stem + PR.t("-笔记.zip");
+        } catch (err) { PR.toast(PR.t("导出失败：{msg}", { msg: PR.esc(err.message) })); return; }
+      } else {  // 离线版没有服务，打不了 zip：图片位置留一句说明，不留断链
+        text = text.replace(IMG, PR.t("（图片未导出）"));
+        blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+      }
+    }
+    const a = PR.el("a", { href: URL.createObjectURL(blob), download: name });
     document.body.appendChild(a); a.click(); a.remove();
     dlg.classList.remove("open");
   });

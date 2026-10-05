@@ -55,7 +55,7 @@
     const body = editing
       ? '<textarea placeholder="' + (d.kind === "question" ? PR.t("想问什么？可以点“让模型回答”，也可以留给下次和 agent 讨论") : PR.t("写下你的理解、疑问或联想…（支持 $公式$、**粗体**）")) + '">' + PR.esc(d.body || "") + "</textarea>" +
         '<div class="kinds"><button data-k="note" class="' + (d.kind !== "question" ? "on" : "") + '">' + PR.t("笔记") + '</button><button data-k="question" class="' + (d.kind === "question" ? "on" : "") + '">' + PR.t("问题") + "</button>" +
-        colorDots(d) + '<span class="hint">' + PR.t("自动保存 · Esc 收起") + "</span></div>"
+        colorDots(d) + imgButton() + '<span class="hint">' + PR.t("自动保存 · Esc 收起") + "</span></div>"
       : '<div class="body">' + PR.mdBlocks(d.body) + "</div>" + (ask ? '<div class="ask-row">' + ask + "</div>" : "") +
         '<div class="acts"><button data-a="edit">' + PR.t("编辑") + '</button><button data-a="kind">' + (d.kind === "question" ? PR.t("改成笔记") : PR.t("改成问题")) + '</button><button data-a="del">' + PR.t("删除") + "</button></div>";
     return '<div class="card mine' + (editing ? " editing" : "") + (d.color ? " c-" + d.color : "") + '" data-note="' + PR.esc(d.id) + '" data-anchor="' + PR.esc(item.anchor) + '">' +
@@ -64,6 +64,10 @@
         PR.t("「{q}」", { q: PR.md(d.quote, { cite: false, xref: false }) }) + "</div>" : "") + body + "</div>";
   }
   PR.cardHtml = cardHtml;
+  /* 编辑框旁的“插入图片”按钮（只有连着本地服务时才有；离线版没处存图） */
+  function imgButton() {
+    return PR.store.mode === "server" ? '<button data-a="img" class="img-btn" title="' + PR.t("插入图片（也可以直接粘贴截图或拖进来）") + '">' + PR.icon("image", "sm") + PR.t("图片") + "</button>" : "";
+  }
   PR.collectNotes = collect;
   function colorDots(d) {
     if (!d.quote) return "";
@@ -208,6 +212,8 @@
   });
 
   /* ---------- 卡片上的交互（边注和笔记面板共用） ---------- */
+  /* 笔记里的图片加载完会撑高卡片：宽屏边注要重新排一遍，免得叠在一起（load 不冒泡，要用捕获） */
+  document.addEventListener("load", (e) => { if (e.target.classList && e.target.classList.contains("note-img")) PR.layoutMargin(); }, true);
   document.addEventListener("input", (e) => {
     if (e.target.matches("#margin .card textarea, .inline-notes .card textarea")) { PR.autosize(e.target); PR.autosaveNote(); PR.layoutMargin(); }
   });
@@ -222,6 +228,7 @@
       const card = e.target.closest(".card");
       if (!card || !card.isConnected) return;   // 卡片被重排替换掉了，新卡片已接手编辑
       if (card.contains(document.activeElement)) return;
+      if (PR.noteImgBusy && PR.noteImgBusy()) return;   // 正在选图 / 传图：别把编辑框收掉
       if (PR.editingNote === card.dataset.note) { PR.autosaveNote.flush(); PR.closeNoteEditor(); }
     }, 150);
   });
@@ -244,7 +251,8 @@
     if (card.dataset.card && a && (a.dataset.a === "adel" || a.dataset.a === "regen")) { delAgent(card.dataset.card, a.dataset.a === "regen", a); return true; }
     if (nid && a) {
       const n = noteById(nid);
-      if (a.dataset.a === "edit") inPanel ? PR.renderNotesPanel(nid) : PR.openNoteEditor(nid);
+      if (a.dataset.a === "img") PR.pickNoteImage && PR.pickNoteImage(card.querySelector("textarea"));
+      else if (a.dataset.a === "edit") inPanel ? PR.renderNotesPanel(nid) : PR.openNoteEditor(nid);
       else if (a.dataset.a === "ask") PR.askModel(nid);
       else if (a.dataset.a === "kind") { PR.saveNote(Object.assign({}, n, { kind: n.kind === "question" ? "note" : "question" })); inPanel ? PR.renderNotesPanel() : PR.renderMargin(); }
       else if (a.dataset.a === "del") {

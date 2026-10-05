@@ -140,6 +140,8 @@
   };
 
   PR.imageUrl = (rel) => (mode === "static" ? S.images[rel] || "" : "/p/" + PR.pid + "/" + rel);
+  /* 笔记图片的地址（markup.js 调用）；离线版里没有内嵌的就返回空，markup 会把它当普通文字 */
+  PR.noteImageSrc = (name) => PR.imageUrl("note-images/" + name) || "";
   PR.pdfUrl = (page) => (mode === "static" ? "" : "/p/" + PR.pid + "/source.pdf#page=" + page);
   PR.canAsk = () => mode === "server" && S.engine && S.engine !== "none";
 
