@@ -195,6 +195,25 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(buf.getvalue())
 
+    def _annotated_pdf(self, ws):
+        """带划线的 PDF：在内存里生成后直接回传，不写进文献库，source.pdf 不动。没有划线抛 NoHighlights（400）。"""
+        from . import pdf_annotate
+        data, stats = pdf_annotate.export(ws.root)
+        name = pdf_annotate.filename(ws.root)
+        skipped = [{k: s.get(k) for k in ("page", "quote", "reason")} for s in stats["skipped"][:30]]
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition", f"attachment; filename=\"annotated.pdf\"; filename*=UTF-8''{quote(name)}")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-EasyRead-Written", str(stats["written"]))
+        self.send_header("X-EasyRead-Total", str(stats["total"]))
+        self.send_header("X-EasyRead-Skipped", str(len(stats["skipped"])))
+        self.send_header("X-EasyRead-Skipped-Detail", quote(json.dumps(skipped, ensure_ascii=False)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def _chat(self, ws, body: dict):
         """流式回答：一行一个 JSON，{"t": 片段} … 最后 {"done": true, "id": …} 或 {"error": …}。"""
         text = (body.get("text") or "").strip()
@@ -456,6 +475,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self._body() or b"{}")
             if action == "notes-zip":
                 return self._notes_zip(ws, body)
+            if action == "annotated-pdf":
+                return self._annotated_pdf(ws)
             if action == "chat" and len(parts) > 5:
                 sub, tid = parts[5], body.get("thread", "")
                 if sub == "pin":

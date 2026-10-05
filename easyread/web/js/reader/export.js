@@ -26,13 +26,53 @@
       KINDS.map(([k, l]) => '<label><input type="checkbox" data-exp="' + k + '"' + (saved[k] ? " checked" : "") + ">" + l +
         (c[k] != null ? '<span class="n">' + PR.t("{n} 条", { n: c[k] }) + "</span>" : "") + "</label>").join("") +
       '</div><p class="hint">' + PR.t("导出成 Markdown，按原文章节顺序排，可以直接放进 Obsidian、Notion。") + PR.t("笔记里有图片时导出成 zip（含图片文件）。") + "</p>" +
-      '<div class="actions"><button class="btn" data-exp-close>' + PR.t("取消") + '</button><button class="btn primary" data-exp-go>' + PR.t("导出") + "</button></div>";
+      (pdfOk() ? '<p class="hint">' + PR.t("也可以把划线标到英文原 PDF 上，另存一份副本（原文件不动）：译文上的划线标对应的整句英文，原文上的划线标原话。") + "</p>" : "") +
+      '<div class="actions">' + (pdfOk() ? '<button class="btn line" data-exp-pdf style="margin-right:auto">' + PR.t("导出带划线的 PDF") + "</button>" : "") +
+      '<button class="btn" data-exp-close>' + PR.t("取消") + '</button><button class="btn primary" data-exp-go>' + PR.t("导出") + "</button></div>";
     dlg.classList.add("open");
+  };
+
+  /* 带划线的 PDF 要服务端读原 PDF 生成：离线单文件版和在线演示没有服务，不显示这个入口 */
+  const pdfOk = () => PR.store.mode === "server" && !S.demo;
+
+  function dispositionName(r, fallback) {
+    const m = /filename\*=UTF-8''([^;]+)/i.exec(r.headers.get("Content-Disposition") || "");
+    try { return m ? decodeURIComponent(m[1]) : fallback; } catch (err) { return fallback; }
+  }
+
+  PR.exportAnnotatedPdf = async function () {
+    if (!pdfOk()) return;
+    if (!PR.myNotes().some((n) => n.quote)) {
+      PR.toast(PR.t("这篇还没有划线：先在正文里选中文字划线，再导出带划线的 PDF"));
+      return;
+    }
+    if (PR.store.pending) await PR.flush();  // 刚划的线可能还在待存队列里，先写进文献库
+    const left = PR.store.pending;
+    let r;
+    try {
+      r = await fetch("/api/p/" + PR.pid + "/annotated-pdf", { method: "POST", headers: { "Content-Type": "application/json", "X-Token": PR.token || "" }, body: "{}" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+    } catch (err) { PR.toast(PR.t("导出失败：{msg}", { msg: PR.esc(err.message) })); return; }
+    const blob = await r.blob();
+    const a = PR.el("a", { href: URL.createObjectURL(blob), download: dispositionName(r, "annotated.pdf") });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    const written = +r.headers.get("X-EasyRead-Written") || 0, skipped = +r.headers.get("X-EasyRead-Skipped") || 0;
+    let msg = PR.t("已导出 {n} 条划线", { n: written });
+    if (skipped) {
+      let detail = [];
+      try { detail = JSON.parse(decodeURIComponent(r.headers.get("X-EasyRead-Skipped-Detail") || "[]")); } catch (err) { detail = []; }
+      msg += PR.t("；{n} 条因找不到对应位置未导出", { n: skipped }) + "<br>" + detail.slice(0, 5).map((d) =>
+        PR.esc(PR.t("第 {page} 页「{quote}」", { page: d.page == null ? "?" : d.page, quote: d.quote || "" }))).join("<br>") + (skipped > 5 ? "<br>…" : "");
+    }
+    if (left) msg += "<br>" + PR.t("还有 {n} 条修改没写进文献库，这次导出不含它们", { n: left });
+    PR.toast(msg, null, skipped || left ? 12000 : 4200);
   };
 
   PR.$("#readerDlg").addEventListener("click", async (e) => {
     const dlg = PR.$("#readerDlg");
     if (e.target.closest("[data-exp-close]")) return dlg.classList.remove("open");
+    if (e.target.closest("[data-exp-pdf]")) { dlg.classList.remove("open"); return PR.exportAnnotatedPdf(); }
     if (!e.target.closest("[data-exp-go]")) return;
     const pick = {};
     PR.$$("[data-exp]", dlg).forEach((i) => (pick[i.dataset.exp] = i.checked));

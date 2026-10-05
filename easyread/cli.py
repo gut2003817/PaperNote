@@ -10,6 +10,7 @@
   easyread check ID                       检查块、引用、TeX
   easyread locate ID                      重新计算原页高亮位置
   easyread export ID                      导出单文件离线 HTML
+  easyread export-pdf ID [--out 路径] [--force]  导出带划线的 PDF 副本（原 source.pdf 不动）
   easyread demo ID --out docs/demo        做成网站上的在线演示（图片另存、带问 AI 记录）
   easyread merge ID --from 导出.json       把离线版页面导出的修改并回文献库
   easyread migrate 旧的“xxx-共读”目录      把旧版技能生成的目录搬进文献库
@@ -194,6 +195,32 @@ def cmd_export(a):
     out(str(build(find(a.id))))
 
 
+def cmd_export_pdf(a):
+    import os
+    from . import pdf_annotate
+    ws = find(a.id)
+    src = ws.root / "source.pdf"
+    target = Path(a.out).expanduser() if a.out else Path.cwd()
+    if target.is_dir():
+        target = target / pdf_annotate.filename(ws.root)
+    if target.resolve() == src.resolve() or (target.exists() and src.exists() and os.path.samefile(target, src)):
+        sys.exit("拒绝：不能写到原始的 source.pdf，请换一个输出路径")
+    if target.exists() and not a.force:
+        sys.exit(f"已存在：{target}（要覆盖请加 --force）")
+    try:
+        data, stats = pdf_annotate.export(ws.root)
+    except pdf_annotate.NoHighlights as e:
+        sys.exit(str(e))
+    tmp = target.with_name(target.name + ".part")
+    tmp.write_bytes(data)
+    os.replace(tmp, target)
+    out(f"已导出 {stats['written']} / {stats['total']} 条划线：{target}")
+    if stats["skipped"]:
+        out(f"{len(stats['skipped'])} 条因找不到对应位置未导出：")
+        for line in pdf_annotate.skipped_lines(stats):
+            out("  " + line)
+
+
 def cmd_demo(a):
     from .site import build_demo
     out(str(build_demo(find(a.id), Path(a.out), credit=a.credit or "")))
@@ -227,6 +254,8 @@ def main(argv=None):
     p = sub.add_parser("translate"); p.add_argument("id"); p.add_argument("--pages"); p.set_defaults(fn=cmd_translate)
     for name, fn in (("status", cmd_status), ("check", cmd_check), ("locate", cmd_locate), ("export", cmd_export)):
         p = sub.add_parser(name); p.add_argument("id"); p.set_defaults(fn=fn)
+    p = sub.add_parser("export-pdf"); p.add_argument("id"); p.add_argument("--out", help="输出文件或目录（默认当前目录）")
+    p.add_argument("--force", action="store_true", help="输出文件已存在时覆盖（source.pdf 永远不覆盖）"); p.set_defaults(fn=cmd_export_pdf)
     p = sub.add_parser("blocks"); p.add_argument("id"); p.add_argument("--from", dest="from_file", required=True)
     p.add_argument("--done"); p.add_argument("--replace", action="store_true"); p.set_defaults(fn=cmd_blocks)
     p = sub.add_parser("discuss"); p.add_argument("id"); p.add_argument("--from", dest="from_file"); p.add_argument("--delete")

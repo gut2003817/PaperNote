@@ -1127,5 +1127,21 @@
  "{field} 里参数 {flag} 的值不合法：{value}": "{field}: the value of option {flag} is not valid: {value}",
  "{field} 里没有这个设置项：{key}": "{field} has no such setting: {key}",
  "{field} 里的 {value} 不是“参数 值”的形式（可用的参数只有：{allowed}）": "{field}: {value} is not in the \"option value\" form (allowed options: {allowed})",
- "问 AI 的模型名单必须是对象数组": "The Ask AI model list must be an array of objects"
+ "问 AI 的模型名单必须是对象数组": "The Ask AI model list must be an array of objects",
+ "-划线版": "-annotated",
+ "也可以把划线标到英文原 PDF 上，另存一份副本（原文件不动）：译文上的划线标对应的整句英文，原文上的划线标原话。": "You can also put your highlights on the original English PDF as a separate copy (the original file is untouched): highlights on the translation mark the matching English sentences; highlights on the original mark the exact words.",
+ "原页上找不到这段英文": "This passage was not found on the original page",
+ "原页文字对不上（对上 {p}%）": "The text on the original page does not match ({p}% matched)",
+ "导出带划线的 PDF": "Export PDF with highlights",
+ "已导出 {n} 条划线": "Exported {n} highlights",
+ "引文在段落里找不到": "The quoted text was not found in the paragraph",
+ "找不到这条划线所在的段落": "The paragraph of this highlight no longer exists",
+ "第 {page} 页「{quote}」": "Page {page} “{quote}”",
+ "第 {page} 页「{quote}」：{reason}": "Page {page} “{quote}”: {reason}",
+ "要标的英文没有字母数字": "The English to mark has no letters or digits",
+ "还有 {n} 条修改没写进文献库，这次导出不含它们": "{n} changes are not saved to the library yet and are not included in this export",
+ "这处没有英文原文": "There is no English original here",
+ "这篇还没有划线": "This paper has no highlights yet",
+ "这篇还没有划线：先在正文里选中文字划线，再导出带划线的 PDF": "This paper has no highlights yet: select text in the paper and highlight it, then export the PDF with highlights",
+ "；{n} 条因找不到对应位置未导出": "; {n} could not be placed on the PDF and were not exported"
 }
