@@ -158,9 +158,10 @@ def _walk_end(text: str, a: int, body: str) -> int:
     对不上的小段（行内公式、个别怪字）跳过；连续几段都对不上就停——段落在这一页到此为止（常见是跨页）。"""
     pos, i, end, miss = a, 0, a - 1, 0
     while i < len(body):
-        piece = body[i:i + _STEP]
-        k = text.find(piece, pos, pos + len(piece) + _SLACK + miss * _STEP)
-        i += len(piece)
+        j = min(i, max(0, len(body) - _STEP))  # 最后一小段不足 _STEP 就往回补齐，免得两三个字母在别处巧合对上
+        piece = body[j:j + _STEP]
+        k = text.find(piece, max(a, pos - (i - j)), pos + len(piece) + _SLACK + miss * _STEP)
+        i = j + len(piece)
         if k < 0:
             miss += 1
             if miss > _MISSES:
