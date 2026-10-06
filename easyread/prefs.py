@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from . import config
+from . import config, palette
 from .store import read_json, write_json_atomic
 
 ALLOWED = {"reader", "keys", "ui", "library", "import"}  # ui：功能开关 features、快捷键总开关 keys_on
@@ -16,12 +16,23 @@ def path():
 
 
 def load() -> dict:
-    return read_json(path(), {}) or {}
+    data = read_json(path(), {}) or {}
+    r = data.get("reader")
+    if isinstance(r, dict) and "palette" in r:  # 手改坏的配色不往外送（前端、离线导出都从这里读）
+        try:
+            r["palette"] = palette.validate(r["palette"])
+        except ValueError:
+            del r["palette"]
+    return data
 
 
 def save(patch: dict) -> dict:
     data = load()
-    for k, v in (patch or {}).items():
+    patch = dict(patch or {})
+    r = patch.get("reader")
+    if isinstance(r, dict) and "palette" in r:  # 先全部校验、再落盘：非法配色整个请求都不收
+        patch["reader"] = {**r, "palette": palette.validate(r["palette"])}
+    for k, v in patch.items():
         if k in ALLOWED and isinstance(v, dict):
             data[k] = {**(data.get(k) or {}), **v}
     write_json_atomic(path(), data)

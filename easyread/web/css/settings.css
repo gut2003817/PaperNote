@@ -150,3 +150,33 @@ label.check input { accent-color: var(--accent); width: 15px; height: 15px; marg
 @media (max-width: 560px) { .engine-cards:not(.mc-cards) { grid-template-columns: 1fr; } }
 .mc-cards .mc-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: auto; padding-top: 8px; }
 .mc-cards .mc-tags .badge { margin: 0; }
+
+/* 配色（settings-palette.js）：色票用 --sw-bg / --sw-ink、预览用 --pv-*，都是 JS 用 setProperty 设的 */
+.pal-modes { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; font-size: 13px; color: var(--ink-2); }
+.pal-modes > span { margin-right: 4px; }
+.pal-modes button { height: 28px; padding: 0 12px; border-radius: 14px; font-size: 12.5px; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--rule-2); }
+.pal-modes button:hover { color: var(--ink); background: var(--accent-soft); }
+.pal-modes button.on { color: var(--accent); background: var(--accent-soft-2); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.pal-modes .hint { flex-basis: 100%; margin: 2px 0 0; }
+.pal-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.pal-card { display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--rule-2); text-align: left; font-size: 12.5px; color: var(--ink-2); }
+.pal-card:hover { background: var(--accent-soft); }
+.pal-card.on { box-shadow: inset 0 0 0 1.5px var(--accent); background: var(--accent-soft); color: var(--ink); }
+.pal-sw { display: flex; align-items: center; justify-content: center; height: 40px; border-radius: 6px; font: 600 17px var(--serif-zh, serif); background: var(--sw-bg, #fff); color: var(--sw-ink, #000); box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .35); }
+.pal-name { padding: 0 2px 2px; }
+.pal-custom { border-top: 1px solid var(--rule); padding-top: 12px; margin-bottom: 12px; display: grid; gap: 8px; }
+.pal-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
+.pal-row > span { width: 64px; flex: none; }
+.pal-color { width: 40px; height: 30px; padding: 0; border: 1px solid var(--rule-2); border-radius: 6px; background: none; cursor: pointer; }
+.pal-hex { width: 96px; font-family: var(--mono); }
+.pal-hex.bad { box-shadow: inset 0 0 0 1.5px var(--danger); }
+.pal-ratio { font-size: 13px; color: var(--ink-2); }
+.pal-warn { font-size: 12.5px; min-height: 0; }
+.pal-warn.warn { color: var(--mine); }
+.pal-warn.bad { color: var(--danger); }
+.pal-btns { display: flex; gap: 8px; }
+.pal-preview { background: var(--pv-bg); color: var(--pv-ink); border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; box-shadow: inset 0 0 0 1px var(--pv-rule); }
+.pal-preview b { font-size: 13px; }
+.pal-preview p { margin: 4px 0 0; font-size: 14px; line-height: 1.7; }
+.pal-preview .p2 { color: var(--pv-ink2); }
+.pal-preview .p3 { color: var(--pv-ink3); }

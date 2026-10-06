@@ -26,9 +26,13 @@
         (location.protocol === "file:" ? "" : '<label class="field"><span>' + PR.t("论文译成") + '</span><select class="input" id="targetSel">' +
           PR.opt(PR.TARGETS, s.target || PR.target) + "</select></label>") + "</div>" +
         (location.protocol === "file:" ? "" : '<p class="set-lead">' + PR.t("新翻译的论文用这个语言；已经译过的论文保持原来的语言。不需要译文的话，导入时选“读英文原文”。") + "</p>") +
+        (PR.palettePanel ? PR.palettePanel.html(s) : "") +  // 配色（settings-palette.js）
         (PR.updateSection ? PR.updateSection() : "");  // 版本和检查更新，只有文献库页有（update.js）
     },
+    after(s, dlg) { if (PR.palettePanel) PR.palettePanel.after(s, dlg); },
+    input(e, s, dlg) { return PR.palettePanel ? PR.palettePanel.input(e, s, dlg) : false; },
     click(e, s) {
+      if (PR.palettePanel && e.target.closest("[data-pal-mode],[data-pal-preset],[data-pal-custom],[data-pal-reset],[data-pal-auto]")) return PR.palettePanel.click(e, s);
       if (!e.target.closest("[data-type-reset]")) return false;
       s.type = Object.assign({}, s.type, PR.TYPE_DEFAULTS);  // 只重置排版，显示方式保留
       return true;
@@ -38,7 +42,7 @@
       if (t === "view") { s.type.mode = e.target.value === "both" ? "bi" : "zh"; if (e.target.value !== "both") s.type.lead = e.target.value; }  // 和阅读页顶栏一样：mode + lead
       else if (t) s.type[t] = t === "margin" ? e.target.value === "true" : ["fs", "measure", "lh"].includes(t) ? +e.target.value : e.target.value;
       if (e.target.dataset.feat) s.ui.features[e.target.dataset.feat] = e.target.checked;
-      if (e.target.id === "themeSel") { s.theme = e.target.value; PR.applyTheme(s.theme); }
+      if (e.target.id === "themeSel") { s.theme = e.target.value; PR.applyTheme(s.theme); if (PR.palettePanel) { PR.palettePanel.followTheme(s); return true; } }  // 配色区块跟着换成当前模式
       if (e.target.id === "langSel") s.lang = e.target.value;
       if (e.target.id === "targetSel") s.target = e.target.value;
       return false;

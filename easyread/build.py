@@ -10,7 +10,7 @@ import json
 import re
 from pathlib import Path
 
-from . import i18n, note_images
+from . import i18n, note_images, palette, prefs
 from .config import WEB
 from .store import Workspace
 
@@ -65,6 +65,10 @@ def build(ws: Workspace, out: Path | None = None, assets: Path | None = None, ex
     data = {n: ws.load(n) for n in ("discussion", "reader", "layout", "item")}
     data.update({"paper": paper, "images": images}, **(extra or {}))
     payload = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
+    # 带上导出当下的配色：只是一段经 palette.validate 校验过的 JSON 数据，不进 <style>（palette.js 在页面里自己算颜色）
+    pal = (prefs.load().get("reader") or {}).get("palette")
+    if pal:
+        page = page.replace("</head>", "<script>window.ER_PALETTE_EXPORT=" + json.dumps(palette.validate(pal)).replace("<", "\\u003c") + ";</script></head>", 1)
     page = page.replace("<!--PR:DATA-->", f'<script id="pr-data" type="application/json">{payload}</script>')
     title = paper.get("meta", {}).get("title_zh") or paper.get("meta", {}).get("title_en") or i18n.tr("论文")
     page = re.sub(r"<title>.*?</title>", f"<title>{htmllib.escape(title)}</title>", page, count=1)
