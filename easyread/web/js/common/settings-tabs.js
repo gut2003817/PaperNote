@@ -7,6 +7,7 @@
   /* 排版：和阅读页 Aa 面板是同一份设置，这里多一个“恢复默认” */
   function typeHtml(s) {
     if (!s.type) s.type = Object.assign({}, PR.TYPE_DEFAULTS, PR.ls.get("easyread-prefs", {}));
+    delete s.type.palette; delete s.type.theme;  // 这份排版设置会整包存回去，不能夹带配色，也不能夹带旧主题（否则存的时候把刚改的主题盖回旧值；配色、主题另有各自的保存）
     const t = Object.assign({ view: s.type.mode === "bi" ? "both" : s.type.lead === "original" ? "original" : "translation" }, s.type), range = (a, b, step) => { const out = []; for (let v = a; v <= b + 1e-9; v += step) out.push([+v.toFixed(2), +v.toFixed(2)]); return out; };
     const sel = (key, label, list) => '<label class="field"><span>' + label + '</span><select class="input" data-type="' + key + '">' + PR.opt(list, t[key]) + "</select></label>";
     return '<h4 class="set-h">' + PR.t("排版") + '</h4><div class="settings-sec grid3">' +

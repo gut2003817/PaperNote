@@ -77,7 +77,7 @@ window.PR = window.PR || {};
   function resolve(mode, e) { const b = baseOf(mode, e); return b ? derive(b.bg, b.ink) : null; }
 
   /* 校验：不合法返回 null。形状和服务器端一致；只放行 #RRGGBB 与白名单 id。 */
-  function clean(p, lenient) {  // lenient：只给设置页预览用（低对比也先看看效果，但存不进去）
+  function clean(p) {
     if (!p || typeof p !== "object" || Array.isArray(p)) return null;
     const out = {};
     for (const mode of Object.keys(p)) {
@@ -89,7 +89,7 @@ window.PR = window.PR || {};
         if (!PRESETS[mode].some((x) => x.id === e.preset)) return null;
         out[mode] = { preset: e.preset };
       } else if (e.custom && typeof e.custom === "object" && Object.keys(e.custom).length === 2 && isHex(e.custom.bg) && isHex(e.custom.ink)) {
-        if (!lenient && contrast(e.custom.bg, e.custom.ink) < MIN_SAVE) return null;
+        if (contrast(e.custom.bg, e.custom.ink) < MIN_SAVE) return null;
         out[mode] = { custom: { bg: e.custom.bg.toLowerCase(), ink: e.custom.ink.toLowerCase() } };
       } else return null;
     }
@@ -153,7 +153,6 @@ window.PR = window.PR || {};
     const prefs = PR.ls.get("easyread-prefs", {});
     prefs.palette = c;
     PR.ls.set("easyread-prefs", prefs);
-    if (PR.prefs) PR.prefs.palette = c;
     if (PR.savePrefs) PR.savePrefs("reader", { palette: c });
     draft = null;
     apply();
@@ -162,7 +161,12 @@ window.PR = window.PR || {};
 
   PR.palette = {
     VARS, PRESETS, DEFAULTS, MIN_SAVE, WARN_BELOW, isHex, mix, lum, contrast, derive, resolve, clean, autoInk, apply, saved, commit,
-    preview(p) { draft = clean(p, true) || draft; apply(); },
+    /* 设置页预览：每个模式各自校验，不合法的（含对比度 < 3:1，否则连设置对话框本身都看不清了）不套用，退回已保存的 */
+    preview(p) {
+      const sv = saved(), d = {};
+      for (const m of ["light", "dark"]) { const one = clean({ [m]: p && p[m] }); const v = (one && one[m]) || sv[m]; if (v) d[m] = v; }
+      draft = d; apply();
+    },
     endPreview() { draft = null; apply(); },
     baseOf,
   };

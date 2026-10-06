@@ -131,10 +131,15 @@ test("输入验证：非法色值、未知 preset、多余键一律拒绝", () =
   assert.equal(e.calls.set, 0);
 });
 
-test("对比度下限：< 3:1 不能 commit，≥ 3:1 可以；预览宽松", () => {
+test("对比度下限：< 3:1 不能 commit，也不会被预览套用；≥ 3:1 可以", () => {
   const e = env({}, "light");
   assert.equal(P.clean({ light: { custom: { bg: "#ffffff", ink: "#bbbbbb" } } }), null);  // ≈1.9:1
   assert.ok(P.clean({ light: { custom: { bg: "#ffffff", ink: "#949494" } } }));            // ≈3.0:1
   e.P.preview({ light: { custom: { bg: "#ffffff", ink: "#bbbbbb" } } });
-  assert.equal(e.style.get("--ink"), "#bbbbbb");  // 预览看得到
+  assert.equal(e.style.size, 0);  // 预览也不套用 < 3:1 的配色（否则设置对话框自己都看不清），退回已保存的（这里是没设）
+  e.P.preview({ light: { custom: { bg: "#ffffff", ink: "#949494" } } });
+  assert.equal(e.style.get("--ink"), "#949494");  // 3:1 以上预览得到
+  const g = env({ palette: { light: { preset: "green" } } }, "light");
+  g.P.preview({ light: { custom: { bg: "#ffffff", ink: "#eeeeee" } } });
+  assert.equal(g.style.get("--bg"), "#dcebd5");  // 不合法的预览退回已保存的配色
 });

@@ -14,6 +14,7 @@
     return p;
   };
   PR.prefs = Object.assign({}, DEF, PR.migratePrefs(PR.ls.get("easyread-prefs", {})));
+  delete PR.prefs.palette;  // 配色不跟排版偏好一起存取（palette.js 自己管）：否则开着多个分页时，旧分页会把新配色盖回去
   PR.applyPrefs = function () {
     const p = PR.prefs, root = document.documentElement;
     root.style.setProperty("--fs", p.fs + "px");

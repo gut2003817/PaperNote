@@ -119,7 +119,7 @@
     }
     if (PR.store.mode === "server") {  // 以本机 prefs.json 为准
       const p = await PR.loadPrefs();
-      if (p.reader) { Object.assign(PR.prefs, PR.migratePrefs(Object.assign({}, p.reader))); PR.applyPrefs(); }
+      if (p.reader) { const r = Object.assign({}, p.reader); delete r.palette; Object.assign(PR.prefs, PR.migratePrefs(r)); PR.applyPrefs(); }  // 配色由 palette.js 管
       PR.useServerUi(p);
     }
     if (PR.store.mode === "static") PR.$("#backBtn").style.display = "none";
