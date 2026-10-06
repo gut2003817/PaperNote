@@ -117,7 +117,11 @@ def crop(root: Path, page: int, box: list[float], out_name: str, scale: float = 
 
 _MATH = re.compile(r"\$[^$]*\$")
 _ALNUM = re.compile(r"[a-z0-9]")
-LOCATE_VERSION = "5"  # 图形范围按页面上看得见的像素收边；旧论文打开时重算。
+# 本分支自己的版本号：只做相等比较（见 refresh_layout），不同就重算。上游 v5 之后用纯数字
+# （"6"、"7"……），这里用 "5z1" 这类带字母的字串，日后合并上游时不会撞号而误判为已是新版。
+# 5z1：只对到段首、段尾不在这一页（跨页段落）时，沿着段落文字往后对出这一页的真正结尾，
+# 不再按全文长度估算——估算会越过段落、吃进作者名单等别处的字，框被撑到别的位置。
+LOCATE_VERSION = "5z1"
 
 
 def _norm(s: str) -> str:
@@ -144,6 +148,26 @@ def _anchors(en: str) -> tuple[str, str]:
     head = _norm(plain_parts[0])[:28]
     tail = _norm(plain_parts[-1])[-28:]
     return head, tail
+
+
+_STEP, _SLACK, _MISSES = 8, 40, 4
+
+
+def _walk_end(text: str, a: int, body: str) -> int:
+    """从段首 a 起把段落文字（body，已去公式、正规化）一小段一小段往后对，返回最后对上的位置。
+    对不上的小段（行内公式、个别怪字）跳过；连续几段都对不上就停——段落在这一页到此为止（常见是跨页）。"""
+    pos, i, end, miss = a, 0, a - 1, 0
+    while i < len(body):
+        piece = body[i:i + _STEP]
+        k = text.find(piece, pos, pos + len(piece) + _SLACK + miss * _STEP)
+        i += len(piece)
+        if k < 0:
+            miss += 1
+            if miss > _MISSES:
+                break
+            continue
+        end, pos, miss = k + len(piece) - 1, k + len(piece), 0
+    return end
 
 
 def _box(chars, idx, a: int, b: int):
@@ -223,9 +247,14 @@ def _locate(root: Path) -> dict:
             if a < 0:
                 continue
             b = text.find(tail, a) if tail else -1
-            end = b + len(tail) - 1 if b >= 0 else min(a + len(_norm(block_english(block))), len(idx) - 1)
+            # 段尾可能在下一页（跨页段落）、或太短而先在段内被找到；沿着文字对出的结尾补上这两种情况。
+            walked = _walk_end(text, a, _norm(_MATH.sub(" ", block_english(block))))
+            if b >= 0 or walked >= a + len(head):
+                end, src = max(b + len(tail) - 1 if b >= 0 else -1, walked), "text"
+            else:
+                end, src = min(a + len(_norm(block_english(block))), len(idx) - 1), "head"
             boxes = _boxes(chars, idx, a, end)
-            layout[bid] = {"page": pn, "box": _bounds(boxes), "src": "text" if b >= 0 else "head"}
+            layout[bid] = {"page": pn, "box": _bounds(boxes), "src": src}
             if len(boxes) > 1:
                 layout[bid]["boxes"] = boxes
             cursor[pn] = end
