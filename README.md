@@ -26,11 +26,12 @@ git clone https://github.com/gut2003817/PaperNote.git easyread-zhtw
 cd easyread-zhtw
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -e .
-EASYREAD_LANG=zh-TW .venv/bin/python -m easyread serve --open
+.venv/bin/python -m easyread serve --open
 ```
 
 - 瀏覽器會開啟 `http://127.0.0.1:8765`。請用 `127.0.0.1` 或 `localhost` 連線；用區網 IP 或其他網域名稱會被 403 拒絕。
-- `EASYREAD_LANG=zh-TW` 讓介面固定為繁體；沒帶且系統語言不是繁體時，介面可能變成英文或簡體。也可以在設定裡把「界面語言」改成繁體中文。
+- 介面語言預設跟隨系統；若系統語言不是繁體，第一次請到「設定 → 閱讀 → 界面語言」選「繁體中文」，之後會記住。頂欄右上角的 `EN`／`中` 按鈕可以隨時切換中英介面。
+- **不要用環境變數 `EASYREAD_LANG` 啟動日常使用的服務**：它是除錯用，會強制鎖定介面語言、**優先於設定**，頂欄的 `EN` 按鈕按了會看起來完全沒反應（設定其實有存，但被環境變數蓋過）。
 - 命令列用 `.venv/bin/python -m easyread <指令>`（`list`、`check`、`translate`、`blocks`、`locate`…），`easyread` 沒有裝在全域。
 - 翻譯引擎預設用本機的 Claude Code CLI，**不用 API Key，但會消耗你的訂閱額度**；也可以改用 Codex、各家 API 或本機 Ollama，見 [完整使用說明](README.zh-TW.md)。
 
