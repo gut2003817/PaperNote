@@ -28,6 +28,7 @@ DEFAULTS = {
     "engine": "claude",          # claude | codex（本机 CLI 无头）| openai（任意 OpenAI 兼容接口）| none
     "auto_translate": True,      # 导入后自动开始翻译
     "target": "zh-TW",           # 译文语言，见 langs.py（繁体版副本默认繁体）
+    "obsidian_vault": "",        # Obsidian vault 根目录，空 = 未设置；笔记写到其下“论文笔记”，见 obsidian_vault.py
     "check_updates": True,       # 打开文献库时问 GitHub 有没有新版本（一天一次），见 updates.py
     "batch_pages": 2,            # 每次交给模型的页数
     "page_cap": 60,              # 全文超过多少页先确认；0 表示不限

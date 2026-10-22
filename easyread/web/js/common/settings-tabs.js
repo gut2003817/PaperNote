@@ -16,6 +16,23 @@
       sel("view", PR.t("打开时显示"), [["translation", PR.t("译文")], ["original", PR.t("原文")], ["both", PR.t("双语")]]) + sel("margin", PR.t("边注"), [["true", PR.t("显示")], ["false", PR.t("收起")]]) +
       '</div><div class="keys-foot" style="margin-top:4px"><span class="hint">' + PR.t("阅读时也能在右上角 Aa 里随手调。") + '</span><button class="btn sm" data-type-reset>' + PR.t("恢复默认排版") + "</button></div>";
   }
+  /* Obsidian 文件夹：存在 config.json 的 obsidian_vault；改动先记在 s.obsidian，按“保存”才一起提交（后端验证，不合格整个设置都不存）。 */
+  function obsidianHtml(s) {
+    const v = s.obsidian != null ? s.obsidian : (s.cfg && s.cfg.obsidian_vault) || "";
+    return '<h4 class="set-h">' + PR.t("Obsidian 文件夹") + '</h4><div class="inline"><input class="input" id="obsVault" style="flex:1" spellcheck="false" placeholder="' +
+      PR.esc(PR.t("/Users/你/Documents/Obsidian Vault")) + '" value="' + PR.esc(v) + '"><button class="btn" id="obsPick">' + PR.t("选择文件夹") + "</button></div>" +
+      '<p class="set-lead">' + PR.t("论文笔记会写到这个文件夹里的“论文笔记”文件夹，只新增文件，不会覆盖已有的文件。留空表示不使用。") + "</p>";
+  }
+  async function pickObsidian(s) {
+    const desktop = window.easyreadDesktop;
+    let path = desktop && desktop.pickFolder ? await desktop.pickFolder() : null;
+    if (!(desktop && desktop.pickFolder)) {  // 浏览器版：后端弹系统的选文件夹窗口，弹不出来才让人填路径
+      const r = await PR.api("/api/library/pick-folder", { method: "POST", body: { for: "obsidian" } }).catch(() => ({ supported: false }));
+      path = r.supported ? r.path : await PR.promptText({ title: PR.t("Obsidian 文件夹"), body: PR.t("填写 Obsidian 文件夹的完整路径"), max: 4096, value: s.obsidian || "" });
+    }
+    if (path) s.obsidian = path;
+  }
+
   T.reading = {
     render(s) {
       return typeHtml(s) + '<h4 class="set-h">' + PR.t("功能") + '</h4><p class="set-lead">' + PR.t("阅读页上显示哪些功能。关掉的功能，按钮和快捷键都会一起消失。") + '</p><div class="switch-list">' +
@@ -27,12 +44,17 @@
         (location.protocol === "file:" ? "" : '<label class="field"><span>' + PR.t("论文译成") + '</span><select class="input" id="targetSel">' +
           PR.opt(PR.TARGETS, s.target || PR.target) + "</select></label>") + "</div>" +
         (location.protocol === "file:" ? "" : '<p class="set-lead">' + PR.t("新翻译的论文用这个语言；已经译过的论文保持原来的语言。不需要译文的话，导入时选“读英文原文”。") + "</p>") +
+        obsidianHtml(s) +
         (PR.palettePanel ? PR.palettePanel.html(s) : "") +  // 配色（settings-palette.js）
         (PR.updateSection ? PR.updateSection() : "");  // 版本和检查更新，只有文献库页有（update.js）
     },
     after(s, dlg) { if (PR.palettePanel) PR.palettePanel.after(s, dlg); },
-    input(e, s, dlg) { return PR.palettePanel ? PR.palettePanel.input(e, s, dlg) : false; },
-    click(e, s) {
+    input(e, s, dlg) {
+      if (e.target.id === "obsVault") { s.obsidian = e.target.value; return false; }
+      return PR.palettePanel ? PR.palettePanel.input(e, s, dlg) : false;
+    },
+    async click(e, s) {
+      if (e.target.closest("#obsPick")) { await pickObsidian(s); return true; }
       if (PR.palettePanel && e.target.closest("[data-pal-mode],[data-pal-preset],[data-pal-custom],[data-pal-reset],[data-pal-auto]")) return PR.palettePanel.click(e, s);
       if (!e.target.closest("[data-type-reset]")) return false;
       s.type = Object.assign({}, s.type, PR.TYPE_DEFAULTS);  // 只重置排版，显示方式保留

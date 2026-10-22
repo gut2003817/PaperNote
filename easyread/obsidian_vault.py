@@ -19,7 +19,7 @@ def check_vault(path: str) -> Path:
         raise ValueError(tr("请输入完整的文件夹路径"))
     try:
         if vault.is_symlink():
-            raise ValueError(tr("文献库中有符号链接或目录联接，请改用普通文件夹：{path}", path=path))
+            raise ValueError(tr("Obsidian 文件夹不能是符号链接或目录联接，请选择普通文件夹：{path}", path=path))
         if not vault.exists():
             raise ValueError(tr("路径不存在：{path}", path=path))
         if not vault.is_dir():
@@ -28,7 +28,7 @@ def check_vault(path: str) -> Path:
         with tempfile.NamedTemporaryFile(dir=vault):
             pass
     except OSError as exc:
-        raise ValueError(tr("目标文件夹不可写")) from exc
+        raise ValueError(tr("Obsidian 文件夹不可写，请检查权限")) from exc
     return vault
 
 
@@ -38,15 +38,15 @@ def note_dirs(vault: Path) -> tuple[Path, Path]:
     figures = notes / "附圖"  # i18n-ok 固定的 vault 子目录名
     for directory in (notes, figures):
         if directory.is_symlink():
-            raise ValueError(tr("文献库中有符号链接或目录联接，请改用普通文件夹：{path}", path=str(directory)))
+            raise ValueError(tr("Obsidian 里的“论文笔记”文件夹不能是符号链接，请改成普通文件夹：{path}", path=str(directory)))
         try:
             directory.mkdir(exist_ok=True)
         except FileExistsError as exc:
-            raise ValueError(tr("目标中已有同名文件或文件夹，不会覆盖：{name}", name=str(directory))) from exc
+            raise ValueError(tr("Obsidian 文件夹里已有同名的文件，不会覆盖：{name}", name=str(directory))) from exc
         except OSError as exc:
-            raise ValueError(tr("目标文件夹不可写")) from exc
+            raise ValueError(tr("Obsidian 文件夹不可写，请检查权限")) from exc
         if directory.is_symlink() or not directory.is_dir():
-            raise ValueError(tr("目标中已有同名文件或文件夹，不会覆盖：{name}", name=str(directory)))
+            raise ValueError(tr("Obsidian 文件夹里已有同名的文件，不会覆盖：{name}", name=str(directory)))
     return notes, figures
 
 

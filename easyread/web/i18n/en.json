@@ -1176,5 +1176,15 @@
  "重设为默认": "Reset to default",
  "高对比": "High contrast",
  "默认深灰": "Default dark gray",
- "默认米白": "Default off-white"
+ "默认米白": "Default off-white",
+ "Obsidian 文件夹不能是符号链接或目录联接，请选择普通文件夹：{path}": "Obsidian folder cannot be a symbolic link or directory junction. Choose a regular folder: {path}",
+ "Obsidian 里的“论文笔记”文件夹不能是符号链接，请改成普通文件夹：{path}": "The \"論文筆記\" folder inside Obsidian cannot be a symbolic link. Replace it with a regular folder: {path}",
+ "Obsidian 文件夹里已有同名的文件，不会覆盖：{name}": "The Obsidian folder already has an item with this name and it will not be overwritten: {name}",
+ "Obsidian 文件夹不可写，请检查权限": "The Obsidian folder is not writable. Check its permissions",
+ "Obsidian 文件夹": "Obsidian folder",
+ "选择文件夹": "Choose folder",
+ "选择 Obsidian 文件夹": "Choose your Obsidian folder",
+ "填写 Obsidian 文件夹的完整路径": "Enter the full path of your Obsidian folder",
+ "论文笔记会写到这个文件夹里的“论文笔记”文件夹，只新增文件，不会覆盖已有的文件。留空表示不使用。": "Paper notes are written into a \"論文筆記\" folder inside this folder. Files are only added, never overwritten. Leave empty to turn this off.",
+ "/Users/你/Documents/Obsidian Vault": "/Users/you/Documents/Obsidian Vault"
 }

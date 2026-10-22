@@ -142,7 +142,7 @@ def post(app, path: str, body: dict):
         return inspect(body)
     if path == "/api/library/pick-folder":  # 浏览器版：后端弹系统的选文件夹窗口
         from .folder_pick import pick
-        chosen = pick(tr("选择放文献库的文件夹"))
+        chosen = pick(tr("选择 Obsidian 文件夹") if body.get("for") == "obsidian" else tr("选择放文献库的文件夹"))
         return {"supported": chosen is not None, "path": chosen or ""}
     if path == "/api/library/cleanup":
         return cloudlib.cleanup(body.get("path", ""), app.lib.root)

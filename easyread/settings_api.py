@@ -1,7 +1,7 @@
 """设置页的保存类接口（POST）。server.py 按路径转过来，每个函数收请求体、返回要回给页面的 JSON。"""
 from __future__ import annotations
 
-from . import chat_models, cli_guard, config, engines, langs, openai_api
+from . import chat_models, cli_guard, config, engines, langs, obsidian_vault, openai_api
 from .i18n import tr
 
 
@@ -12,6 +12,13 @@ def save_config(patch: dict) -> dict:
         raise ValueError(tr("页数确认上限必须是非负整数"))
     if "target" in patch:
         patch["target"] = langs.valid(patch["target"])
+    if "obsidian_vault" in patch:  # 非空才验；不合格抛错，整个 patch 不写盘
+        v = patch["obsidian_vault"]
+        if not isinstance(v, str):
+            raise ValueError(tr("请输入完整的文件夹路径"))
+        patch["obsidian_vault"] = v.strip()
+        if patch["obsidian_vault"]:
+            obsidian_vault.check_vault(patch["obsidian_vault"])
     if isinstance(patch.get("openai"), dict):
         patch["openai"] = config.with_key(patch["openai"])
     return {"config": config.public(config.save(patch))}
