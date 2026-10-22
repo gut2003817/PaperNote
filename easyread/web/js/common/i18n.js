@@ -8,7 +8,8 @@ window.PR = window.PR || {};
   let dict = {};
   try { dict = JSON.parse((document.getElementById("pr-i18n") || {}).textContent || "{}"); } catch (e) { dict = {}; }
   const htmlLang = document.documentElement.lang;
-  PR.lang = htmlLang === "en" ? "en" : htmlLang === "zh-TW" ? "zh-TW" : "zh";  // "zh" 简体、"zh-TW" 繁体、"en" 英文
+  // "zh" 简体、"zh-TW" 繁体（上游叫 zh-Hant，当别名）、"en" 英文
+  PR.lang = htmlLang === "en" ? "en" : (htmlLang === "zh-TW" || htmlLang === "zh-Hant") ? "zh-TW" : "zh";
   PR.langChoice = document.documentElement.dataset.langChoice || "auto";  // 设置里选的：auto 跟随系统
   PR.target = document.documentElement.dataset.target || "zh";  // 译文语言（论文翻成什么），名字表在 util.js
 

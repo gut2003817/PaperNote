@@ -9,8 +9,8 @@ from __future__ import annotations
 import json
 import re
 
-from .i18n import tr
-from .store import Workspace
+from .app.i18n import tr
+from .library.store import Workspace
 
 WINDOW = 30  # 比对窗口（正规化后的字符数）
 MIN_CHARS = 80  # 一段连续缺漏至少这么多字符才报

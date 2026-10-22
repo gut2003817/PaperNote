@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from easyread.obsidian_context import collect
-from easyread.store import Workspace
+from easyread.library.store import Workspace
 
 
 class ObsidianContextTest(unittest.TestCase):

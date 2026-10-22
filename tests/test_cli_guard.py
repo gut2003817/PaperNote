@@ -9,8 +9,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from easyread import config  # 先导入 config，免得 chat_models 和 engines 循环导入
-from easyread import chat_models, cli_guard, engines, settings_api
+from easyread.app import config  # 先导入 config，免得 chat_models 和 engines 循环导入
+from easyread.chat import chat_models
+from easyread import cli_guard
+from easyread.engines import engines
+from easyread.server import settings_api
 
 
 def fake_exe(directory: Path, name: str) -> str:

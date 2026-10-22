@@ -17,9 +17,13 @@ from urllib.parse import unquote
 
 from PIL import Image
 
-from easyread import config, engines, launch, obsidian_note, server
-from easyread.i18n import tr
-from easyread.store import Workspace, write_json_atomic
+from easyread.app import config
+from easyread.engines import engines
+from easyread.server import launch
+from easyread import obsidian_note
+from easyread.server import server
+from easyread.app.i18n import tr
+from easyread.library.store import Workspace, write_json_atomic
 
 
 class GenerateSetup(unittest.TestCase):
@@ -49,7 +53,7 @@ class GenerateSetup(unittest.TestCase):
         Image.new("RGB", (32, 32), "red").save(self.root / "source.pdf", "PDF")
         self.data = {"short": "TEST", "hook": "亮點", "figures": [{"id": "f1", "desc": "架構"}],
                      "diagrams": [{"title": "流程", "mermaid": "graph TD\nA --> B"}]}
-        mock = patch("easyread.engines.run", side_effect=lambda *a, **kw: json.dumps(self.data))
+        mock = patch("easyread.engines.engines.run", side_effect=lambda *a, **kw: json.dumps(self.data))
         self.run = mock.start()
         self.addCleanup(mock.stop)
 
@@ -153,11 +157,11 @@ class GenerateTest(GenerateSetup):
 class EndpointTest(GenerateSetup):
     def setUp(self):
         super().setUp()
-        cfg_patch = patch("easyread.config.load", side_effect=lambda: copy.deepcopy(self.cfg))
+        cfg_patch = patch("easyread.app.config.load", side_effect=lambda: copy.deepcopy(self.cfg))
         cfg_patch.start()
         self.addCleanup(cfg_patch.stop)
         # 禁止 App 启动无限循环，改用可停止的真实小任务线程。
-        with patch("easyread.jobs.threading.Thread.start"):
+        with patch("easyread.server.jobs.threading.Thread.start"):
             self.app = server.App(self.cfg)
         handler = type("ObsidianHandler", (server.Handler,), {"app": self.app})
         self.handler = handler

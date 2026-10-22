@@ -25,8 +25,9 @@ import pypdf
 import pypdfium2 as pdfium
 
 from easyread import pdf_annotate as pa
-from easyread import pdfwork, sentences
-from easyread.i18n import tr
+from easyread.pdf import pdfwork
+from easyread.translate import sentences
+from easyread.app.i18n import tr
 
 FONT = 10
 LEAD = 14
@@ -405,8 +406,8 @@ class NoNotesTest(unittest.TestCase):
 
 class CliTest(PdfAnnotateBase):
     def run_cli(self, out, force=False):
-        from easyread import cli
-        from easyread.store import Workspace
+        from easyread.app import cli
+        from easyread.library.store import Workspace
         with patch.object(cli, "find", return_value=Workspace(self.root)):
             cli.cmd_export_pdf(argparse.Namespace(id="x", out=str(out) if out else None, force=force))
 
@@ -435,7 +436,8 @@ class CliTest(PdfAnnotateBase):
 class ServerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from easyread import launch, server
+        from easyread.server import launch
+        from easyread.server import server
         from tests.test_hostcheck import MINI_PDF
         cls.tmp = tempfile.TemporaryDirectory()
         cls.env = patch.dict(os.environ, {"EASYREAD_LIBRARY": cls.tmp.name})

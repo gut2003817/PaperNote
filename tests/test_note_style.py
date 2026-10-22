@@ -3,9 +3,13 @@ import shutil
 import unittest
 from unittest import mock
 
-from easyread import answer_styles, chat, langs, notehelp, prompts
-from easyread.store import write_json_atomic
-from tests.test_translate import make_ws
+from easyread.chat import answer_styles
+from easyread.chat import chat
+from easyread.translate import langs
+from easyread.chat import notehelp
+from easyread.translate import prompts
+from easyread.library.store import write_json_atomic
+from tests.translate.test_translate import make_ws
 
 MARK = "寫筆記的文字習慣"  # i18n-ok 提示词
 MODES = ("review", "revise", "draft")
@@ -50,7 +54,7 @@ class NoteStyleTest(unittest.TestCase):
 
     def test_untranslated_follows_ui_language(self):
         # 没翻过的论文：跟界面语言，和 reply_note 一致
-        from easyread import i18n
+        from easyread.app import i18n
         for ui, want in (("zh-TW", True), ("zh", False), ("en", False)):
             with mock.patch.object(i18n, "lang", lambda ui=ui: ui):
                 self.assertEqual(bool(langs.note_style({})), want, ui)

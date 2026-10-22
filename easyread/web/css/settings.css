@@ -21,6 +21,7 @@ label.check input { accent-color: var(--accent); width: 15px; height: 15px; marg
 .hint a, .hint .linkish { color: var(--accent); }
 .hint .bad, .bad { color: var(--danger); }
 .hint code { font: 11.5px var(--mono); background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }
+.paper-concurrency-note { margin: 4px 0 16px; padding: 10px 12px; border-left: 3px solid var(--danger); border-radius: 0 6px 6px 0; background: var(--surface-2); color: var(--ink-2); font-size: 12px; line-height: 1.65; }
 .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 12px; }
 .test-line { display: flex; align-items: center; margin: 4px 0 4px; min-height: 30px; }
 .test-line .test-result { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -180,3 +181,5 @@ label.check input { accent-color: var(--accent); width: 15px; height: 15px; marg
 .pal-preview p { margin: 4px 0 0; font-size: 14px; line-height: 1.7; }
 .pal-preview .p2 { color: var(--pv-ink2); }
 .pal-preview .p3 { color: var(--pv-ink3); }
+.mc-cards .mc-tags { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.mc-cards .mc-tags .badge { box-sizing: border-box; min-width: 0; max-width: 100%; }

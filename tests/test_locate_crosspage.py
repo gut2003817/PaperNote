@@ -7,8 +7,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from easyread import pdfwork
-from easyread.store import write_json_atomic
+from easyread.pdf import pdfwork
+from easyread.library.store import write_json_atomic
 
 W, H = 612, 792
 LEFT, RIGHT = 54, 324  # 两栏左边界（pt）；栏宽约 234pt，Helvetica 9pt 每行约 48 字

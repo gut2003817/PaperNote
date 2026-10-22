@@ -4,8 +4,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from . import pdfwork
-from .i18n import tr
+from .pdf import pdfwork
+from .app.i18n import tr
 from .obsidian_vault import safe_name
 
 

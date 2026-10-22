@@ -13,10 +13,16 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from easyread import build, cloudlib, config, launch, note_images, server, trash
-from easyread.library import Library
-from easyread.library_api import LibraryLocation
-from easyread.store import Workspace, write_json_atomic
+from easyread.export import build
+from easyread.library import cloudlib
+from easyread.app import config
+from easyread.server import launch
+from easyread import note_images
+from easyread.server import server
+from easyread.library import trash
+from easyread.library.library import Library
+from easyread.server.library_api import LibraryLocation
+from easyread.library.store import Workspace, write_json_atomic
 
 
 def make_png(color=(200, 30, 30), size=(8, 8)) -> bytes:
@@ -245,7 +251,7 @@ class ExportTest(ServerCase):
     def test_demo_assets_mode_copies_note_images(self):
         ws = Workspace(self.root)
         write_json_atomic(ws.reader_path, {"notes": {"n1": {"id": "n1", "kind": "note", "body": f"![](note-images/{self.name})"}}})
-        from easyread.site import build_demo
+        from easyread.export.site import build_demo
         out_dir = Path(self.tmp.name) / "demo"
         build_demo(ws, out_dir)
         self.assertEqual((out_dir / "assets" / f"note-images-{self.name}").read_bytes(), (self.root / "note-images" / self.name).read_bytes())
@@ -262,7 +268,7 @@ class LibraryMoveTest(unittest.TestCase):
         for k, v in (("CONFIG_PATH", self.root / "config.json"),):
             cm = patch.object(config, k, v); cm.start(); self.addCleanup(cm.stop)
         cm = patch.dict(os.environ, {}); cm.start(); self.addCleanup(cm.stop)
-        cm = patch("easyread.cloudlib.detect", return_value=[]); cm.start(); self.addCleanup(cm.stop)
+        cm = patch("easyread.library.cloudlib.detect", return_value=[]); cm.start(); self.addCleanup(cm.stop)
         for name in ("EASYREAD_LIBRARY", "COREAD_LIBRARY", "OneDrive", "OneDriveConsumer", "OneDriveCommercial"):
             os.environ.pop(name, None)
         config.save({"library_dir": str(self.src)})

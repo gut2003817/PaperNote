@@ -1,4 +1,4 @@
-from easyread.cli import main
+from easyread.app.cli import main
 
 
 if __name__ == "__main__":

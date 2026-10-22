@@ -1,7 +1,20 @@
 /* Claude Code / Codex 的模型下拉框，“翻译”和“问 AI”两页共用（API 的表单在 settings-api.js）。
-   名单来自 /api/engines 的 models（后端 cli_models.py）：Codex 就是它 /model 里列的那些；Claude 的别名带上实际版本。 */
+   名单来自 /api/engines 的 models（后端 cli_models.py）：Codex 就是它 /model 里列的那些；Claude 的别名带上实际版本。
+   Grok Build / Antigravity / Cursor / CodeBuddy CLI 没有现成的模型名单，模型名自己填，空着用 CLI 自己的默认。 */
 (function (PR) {
   "use strict";
+  /* efforts：能传的推理强度（和后端 agent_cli.SPECS 一致），空的就不显示推理强度 */
+  PR.agentClis = {
+    grok: { name: "Grok Build", url: "https://x.ai/cli", efforts: ["low", "medium", "high"] },
+    agy: { name: "Antigravity CLI", url: "https://antigravity.google/docs/cli", efforts: ["low", "medium", "high", "xhigh", "max"] },
+    cursor: { name: "Cursor CLI", url: "https://cursor.com/docs/cli/installation", efforts: [] },
+    codebuddy: { name: "CodeBuddy CLI", url: "https://www.codebuddy.cn/docs/cli/headless", efforts: [],
+      hint: PR.t("WorkBuddy 与 CodeBuddy 共用同账号积分；当前免费体验版不含 CLI 访问，需标准版及以上"),
+      setup: PR.t("安装并登录 CodeBuddy CLI") },
+  };
+  PR.isAgentCli = (k) => Object.prototype.hasOwnProperty.call(PR.agentClis, k);
+  PR.isCli = (k) => k === "claude" || k === "codex" || PR.isAgentCli(k);
+  PR.cliName = (k) => (k === "claude" ? "Claude Code" : k === "codex" ? "Codex CLI" : PR.isAgentCli(k) ? PR.agentClis[k].name : k);
   const FALLBACK = { claude: { models: [{ id: "opus", name: "Opus", desc: PR.t("最强") }, { id: "sonnet", name: "Sonnet", desc: PR.t("快、省") }, { id: "haiku", name: "Haiku", desc: PR.t("最快最省") }] },
     codex: { default: "", models: [] } };
   const lists = (s) => (s.models || FALLBACK);
@@ -31,6 +44,7 @@
   };
 
   PR.modelDefaultLabel = function (s, f, key) {
+    if (PR.isAgentCli(f.kind)) return PR.t("跟随默认");
     const L = lists(s)[f.kind] || {};
     const model = (L.models || []).find((m) => m.id === (f.model || L.default));
     const value = key === "reasoning_effort"
@@ -41,6 +55,11 @@
   };
 
   PR.modelReasoningFields = function (s, f) {
+    if (PR.isAgentCli(f.kind)) {
+      const levels = PR.agentClis[f.kind].efforts;
+      return levels.length ? '<div class="grid2"><label class="field"><span>' + PR.t("推理强度") + '</span><select class="input" data-reasoning="reasoning_effort">' +
+        PR.opt([["", PR.t("跟随默认")], ...levels.map((v) => [v, v])], f.reasoning_effort || "") + "</select></label></div>" : "";
+    }
     const L = lists(s)[f.kind] || {};
     const model = (L.models || []).find((m) => m.id === (f.model || L.default));
     let levels = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];

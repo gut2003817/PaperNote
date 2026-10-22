@@ -8,8 +8,9 @@ from datetime import date
 
 import pytest
 
-from easyread import langs, obsidian_note
-from easyread.i18n import tr
+from easyread.translate import langs
+from easyread import obsidian_note
+from easyread.app.i18n import tr
 
 
 @pytest.fixture

@@ -10,7 +10,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from easyread import build, launch, palette, prefs, server
+from easyread.export import build
+from easyread.server import launch
+from easyread import palette
+from easyread.app import prefs
+from easyread.server import server
 from tests.test_hostcheck import MINI_PDF, raw
 
 WEB = Path(__file__).resolve().parents[1] / "easyread" / "web"

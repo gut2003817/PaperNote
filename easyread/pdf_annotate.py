@@ -19,9 +19,10 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from statistics import median
 
-from . import pdfwork, sentences
-from .i18n import tr
-from .store import read_json
+from .pdf import pdfwork
+from .translate import sentences
+from .app.i18n import tr
+from .library.store import read_json
 
 AUTHOR = "EasyRead"
 # 和页面 PR.HL_COLORS / base.css 的 --hl-* 同一组颜色（pink 历史上叫粉，现在画成红）

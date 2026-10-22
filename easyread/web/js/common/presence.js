@@ -1,5 +1,5 @@
 /* 页面开着就连着一条 WebSocket，让服务知道还有人在用。
-   用 start.cmd / start.sh 启动时，页面都关了、后台任务也做完了，服务会自己退出（见 easyread/presence.py）。 */
+   用 start.cmd / start.sh 启动时，页面都关了、后台任务也做完了，服务会自己退出（见 easyread/server/presence.py）。 */
 (function () {
   "use strict";
   if (location.protocol !== "http:" || typeof WebSocket === "undefined") return;

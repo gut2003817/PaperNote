@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from .store import Workspace
+from .library.store import Workspace
 
 PAPER_BUDGET = 14000
 

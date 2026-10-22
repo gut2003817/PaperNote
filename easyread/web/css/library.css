@@ -164,19 +164,39 @@
 .first-n .input { width: 64px; height: 28px; }
 .first-n[hidden] { display: none; }
 
-/* 帮助 */
+/* 顶栏问号（js/library/help.js）：版本和更新放最上面，下面四块是遇到问题时要找的东西 */
 .help-head { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; }
 .help-head .hero { width: 44px; height: 44px; }
 .help-head h2 { margin: 0 0 2px; font-family: var(--ui); }
-.help-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
-.help-cols h4 { font-size: 11.5px; font-weight: 500; letter-spacing: .14em; color: var(--ink-3); margin: 18px 0 8px; }
-.keys { border-collapse: collapse; font-size: 13px; width: 100%; }
-.keys td { padding: 4px 0; vertical-align: top; }
-.keys td:first-child { white-space: nowrap; padding-right: 14px; width: 1%; }
+.help-btn { position: relative; }
+.help-btn .help-dot { display: none; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
+.help-btn.has-update .help-dot { display: block; }
+.help-update { margin: 14px 0 4px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); }
+.help-update .check { margin: 10px 0 0; font-size: 13px; }
+.hu-row { display: flex; align-items: center; gap: 12px; }
+.hu-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); flex: none; }
+.hu-dot.new { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
+.hu-dot.fail { background: var(--danger); box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 22%, transparent); }
+.hu-dot.busy { background: var(--ink-3); }
+.hu-text .hu-fail { color: var(--danger); }
+.hu-text { display: flex; flex-direction: column; gap: 2px; margin-right: auto; min-width: 0; }
+.hu-text b { font-weight: 600; }
+.hu-text .hint { font-size: 12.5px; }
+.help-h { font-size: 11.5px; font-weight: 500; letter-spacing: .14em; color: var(--ink-3); margin: 18px 0 8px; }
+.help-faq details { border-top: 1px solid var(--rule); }
+.help-faq details:last-child { border-bottom: 1px solid var(--rule); }
+.help-faq summary { list-style: none; cursor: pointer; padding: 11px 26px 11px 2px; position: relative; font-size: 14px; font-weight: 500; }
+.help-faq summary::-webkit-details-marker { display: none; }
+.help-faq summary::after { content: "+"; position: absolute; right: 4px; top: 8px; font-size: 18px; color: var(--ink-3); }
+.help-faq details[open] summary::after { content: "−"; }
+.help-faq summary:hover { color: var(--accent); }
+.help-faq p { margin: 0 0 12px; padding-right: 26px; color: var(--ink-2); font-size: 13.5px; line-height: 1.7; }
+.help-faq .linkish { font-size: 13.5px; }
+.help-ask { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--accent-soft); font-size: 13.5px; }
 
 @media (max-width: 760px) {
   .engine-cards { grid-template-columns: 1fr 1fr; }
-  .grid3, .help-cols { grid-template-columns: 1fr; }
+  .grid3 { grid-template-columns: 1fr; }
   .engine-chip { display: none; }
   .steps li { grid-template-columns: 30px 1fr; }
   .steps li .btn { grid-column: 2; grid-row: auto; justify-self: start; margin-top: 8px; }
@@ -278,8 +298,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .up-foot { align-items: center; }
 .up-foot .hint { margin: 0 auto 0 0; }
 .up-err { color: var(--danger, #c0392b); }
-.help-update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 6px; }
-.help-update .check { margin: 0; }
 @media (max-width: 760px) { .update-chip { display: inline-flex; } }
 .update-chip[hidden] { display: none !important; }
 

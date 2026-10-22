@@ -1,6 +1,6 @@
 {
   "name": "easyread-desktop",
-  "version": "1.3.1",
+  "version": "1.4.4",
   "description": "EasyRead desktop application powered by Electron",
   "author": "Edwardxlai",
   "main": "electron/main.cjs",
@@ -52,6 +52,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "include": "installer/installer.nsh",
       "createDesktopShortcut": true,
       "artifactName": "EasyRead-Setup-${version}.exe"
     },
@@ -63,12 +64,19 @@
           "arch": [
             "arm64"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "category": "publications",
-      "identity": "-",
+      "identity": null,
       "hardenedRuntime": false
     },
+    "afterSign": "scripts/mac_sign.cjs",
     "linux": {
       "icon": "electron/assets/icon.png",
       "target": [

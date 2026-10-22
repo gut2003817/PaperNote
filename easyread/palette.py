@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from .i18n import tr
+from .app.i18n import tr
 
 PRESET_IDS = {
     "light": ("default", "white", "green", "bluegray", "parchment", "contrast"),

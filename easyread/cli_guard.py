@@ -16,7 +16,7 @@ import os
 import re
 from pathlib import Path
 
-from .i18n import tr
+from .app.i18n import tr
 
 NAMES = {"claude": "claude", "codex": "codex"}
 _EXTS = ("", ".cmd", ".exe")

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from easyread import coverage
-from easyread.store import Workspace, write_json_atomic
+from easyread.library.store import Workspace, write_json_atomic
 
 HEADER = "IEEE Communications Magazine • October 2025 111"
 P_A = ("The proposed framework collects threat information from the simulator and passes it to the language model, "
@@ -152,8 +152,9 @@ class JobLogHintTest(unittest.TestCase):
         import threading
         from unittest import mock
 
-        from easyread import engines, translate
-        from tests.test_translate import fake_engine, make_ws
+        from easyread.engines import engines
+        from easyread.translate import translate
+        from tests.translate.test_translate import fake_engine, make_ws
         ws = make_ws(1)
         self.addCleanup(shutil.rmtree, ws.root, True)
         (ws.root / "extract" / "page-001.txt").write_text(extract_text, encoding="utf-8")

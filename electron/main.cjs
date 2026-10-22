@@ -9,13 +9,26 @@ const http = require("http");
 const startup = require("./startup-feedback.cjs");
 const { registerUpdates } = require("./desktop-updates.cjs");
 const deepLink = require("./deep-link.cjs");
+const dataDir = require("./data-dir.cjs");
 
 // 窗口缓存等放 %APPDATA%\EasyRead（默认会用 package.json 的 name，叫 easyread-desktop）。
-// 论文和设置不放这里：打包后的后端默认用 ~/EasyRead，和 pip 安装版同一个位置，用户找得到、好备份。
-app.setPath("userData", path.join(app.getPath("appData"), "EasyRead"));
+// 论文和设置不放这里：Windows 安装版放 <安装目录>\data（见 data-dir.cjs），其余平台用 ~/EasyRead。
+// 环境变量不全（比如从精简环境的脚本里启动）时 getPath("appData") 会直接抛错，
+// 这时按 Electron 自己的默认位置算一份，免得一启动就弹主进程报错框。
+function appDataDir() {
+  try {
+    return app.getPath("appData");
+  } catch {
+    const home = os.homedir();
+    if (process.platform === "win32") return process.env.APPDATA || path.join(home, "AppData", "Roaming");
+    if (process.platform === "darwin") return path.join(home, "Library", "Application Support");
+    return process.env.XDG_CONFIG_HOME || path.join(home, ".config");
+  }
+}
+app.setPath("userData", path.join(appDataDir(), "EasyRead"));
 startup.mark(app, "electron-entry");
 
-// 桌面版自己的几句报错跟系统语言走（界面语言由后端决定，见 easyread/i18n.py）
+// 桌面版自己的几句报错跟系统语言走（界面语言由后端决定，见 easyread/app/i18n.py）
 const isZh = () => app.getLocale().toLowerCase().startsWith("zh");
 // 繁体中文地区（zh-TW、zh-HK、zh-MO、zh-Hant-*）：这几句报错用繁体，别当成简体
 const isZhTW = () => /^zh[-_](tw|hk|mo|hant)/i.test(app.getLocale());
@@ -67,6 +80,8 @@ function startBackend() {
   const shellPath = await startup.loginShellPath(process.platform);
   startup.mark(app, "shell-path-ready");
   if (quitting) throw new Error(say("启动已取消", "啟動已取消", "Startup cancelled"));
+  const home = await dataDir.prepare(app, line => startup.mark(app, line));
+  if (home) env.EASYREAD_HOME = home;
   if (shellPath) {
     env.PATH = [...new Set([...shellPath.split(":"), ...(env.PATH || "").split(":")].filter(Boolean))].join(":");
   }
@@ -151,6 +166,26 @@ async function stopBackendGracefully() {
     const timer = setTimeout(() => { child.removeListener("exit", exited); reject(new Error(say("后端尚未退出，请稍后重试", "後端尚未結束，請稍後重試", "The backend has not exited yet. Try again later."))); }, 8000);
     function exited() { clearTimeout(timer); resolve(); }
     child.once("exit", exited);
+  });
+}
+
+/* 退出前先让页面把没落盘的东西写回去再停后端；页面没应就照常退出 */
+function savePageState() {
+  const wc = mainWindow && mainWindow.webContents;
+  if (!wc || wc.isDestroyed()) return Promise.resolve();
+  return new Promise(resolve => {
+    let timer;
+    function done() {
+      clearTimeout(timer);
+      ipcMain.removeListener("easyread:page-saved", saved);
+      resolve();
+    }
+    function saved(event) {
+      if (event.sender === wc && event.senderFrame === wc.mainFrame) done();
+    }
+    timer = setTimeout(done, 1200);
+    ipcMain.on("easyread:page-saved", saved);
+    wc.send("easyread:before-quit");
   });
 }
 
@@ -247,6 +282,12 @@ async function createWindow() {
     if (state.maximized) openingWindow.maximize();
     openingWindow.show();
   });
+  mainWindow.on("close", event => {
+    if (process.platform !== "darwin" && !quitting && backend) {
+      event.preventDefault();
+      app.quit();  // before-quit saves while the renderer is still alive.
+    }
+  });
   mainWindow.on("closed", () => { mainWindow = undefined; });
   try {
     await openingWindow.loadURL(startup.loadingUrl(isZhTW() ? "zh-TW" : isZh()));
@@ -306,7 +347,7 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     if (!backend) return;
     event.preventDefault();
-    stopBackendGracefully().catch(stopBackend).finally(() => app.quit());
+    savePageState().then(stopBackendGracefully).catch(stopBackend).finally(() => app.quit());
   });
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();

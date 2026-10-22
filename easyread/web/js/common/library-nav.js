@@ -2,6 +2,7 @@
 (function (PR) {
   "use strict";
   const KEY = "easyread-library-navigation", PARAM = "library", HISTORY_KEY = "easyreadLibraryReturn";
+  const SNAPSHOT_KEY = "easyread-library-list", SNAPSHOT_TTL = 30 * 60 * 1000, SNAPSHOT_LIMIT = 1024 * 1024;
   const idOk = (id) => typeof id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(id);
   const textOk = (s, max) => typeof s === "string" && s.length <= max;
   const valid = (s) => s && s.version === 1 && idOk(s.paper) && textOk(s.view, 40) &&
@@ -23,6 +24,29 @@
     try { history.replaceState({ ...(history.state || {}), [HISTORY_KEY]: token }, "", url); } catch (_) { /* 无法记录时仍可正常打开论文。 */ }
   }
   PR.libraryNav = {
+    // Cache only list summaries, never the API token or document contents.
+    rememberList(data) {
+      if (!data || !Array.isArray(data.items)) return;
+      const fields = ["id", "title_zh", "title_en", "short_zh", "target", "authors", "affiliation", "year", "date", "venue", "arxiv", "url", "doi", "pages", "done_pages", "en_pages", "abstract", "meta_override", "tags", "status", "starred", "added", "last_opened", "progress", "notes", "highlights", "open_questions", "discussions", "has_paper_note", "job", "thumb"];
+      const items = data.items.map((item) => Object.fromEntries(fields.filter((k) => Object.prototype.hasOwnProperty.call(item, k)).map((k) => [k, item[k]])));
+      const text = JSON.stringify({ version: 1, t: Date.now(), data: { items, engine: data.engine, engine_label: data.engine_label, version: data.version, trash: data.trash } });
+      try {
+        if (!items.length || text.length > SNAPSHOT_LIMIT) localStorage.removeItem(SNAPSHOT_KEY);
+        else localStorage.setItem(SNAPSHOT_KEY, text);
+      } catch (_) { /* Storage may be full or disabled; a loading state is still safe. */ }
+    },
+    cachedList() {
+      const token = (history.state || {})[HISTORY_KEY] || new URLSearchParams(location.search).get(PARAM);
+      if (!read(token)) return null;  // A fresh home must not restore a different navigation.
+      try {
+        const text = localStorage.getItem(SNAPSHOT_KEY);
+        if (!text || text.length > SNAPSHOT_LIMIT) return null;
+        const snap = JSON.parse(text), age = Date.now() - snap.t;
+        if (snap.version !== 1 || !Number.isFinite(age) || age < 0 || age > SNAPSHOT_TTL || !snap.data || !Array.isArray(snap.data.items) || !snap.data.items.length) return null;
+        if (!snap.data.items.every((i) => i && idOk(i.id) && Array.isArray(i.tags) && i.tags.every((tag) => textOk(tag, 128)))) return null;
+        return snap.data;
+      } catch (_) { return null; }
+    },
     readerUrl(paper, state) {
       const url = "/read/" + encodeURIComponent(paper);
       const value = { ...state, paper, version: 1 };

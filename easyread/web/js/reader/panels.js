@@ -191,7 +191,7 @@
     let html = '<nav class="toc">', app = false;
     for (const h of PR.headings) {
       if (h.appendix && !app) { html += '<div class="group">' + PR.t("附录") + "</div>"; app = true; }
-      html += '<a href="#b-' + h.id + '" data-go="' + h.id + '" class="' + (h.level === 2 ? "l2" : "l1") + (cur === h.id ? " on" : "") + '">' +
+      html += '<a href="#b-' + h.id + '" data-go="' + h.id + '" class="' + "l" + h.level + (cur === h.id ? " on" : "") + '">' +
         (counts[h.id] ? '<span class="cnt">' + counts[h.id] + "</span>" : "") + '<span class="n">' + PR.esc(h.num || "") + "</span>" + PR.esc(PR.plain(PR.textFor(h.id) || h.zh)) + "</a>";
     }
     const done = new Set((S.paper.translation || {}).done_pages || []);
@@ -269,7 +269,11 @@
     if (y + h > innerHeight - 10) y = r.top - h - 8;
     pop.style.left = x + "px"; pop.style.top = Math.max(58, y) + "px";
   };
-  PR.hidePopover = () => { clearTimeout(popHideT); PR.$("#popover").classList.remove("open"); };
+  PR.hidePopover = () => {
+    clearTimeout(popHideT);
+    const pop = PR.$("#popover"); pop.classList.remove("open");
+    if (pop.querySelector(".media-hover")) pop.replaceChildren();
+  };
   PR.hidePopoverSoon = () => { if (popSticky) return; clearTimeout(popHideT); popHideT = setTimeout(PR.hidePopover, 220); };
   PR.$("#popover").addEventListener("mouseenter", () => clearTimeout(popHideT));
   PR.$("#popover").addEventListener("mouseleave", () => PR.hidePopoverSoon());

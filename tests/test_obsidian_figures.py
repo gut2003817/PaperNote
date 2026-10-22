@@ -11,9 +11,10 @@ from PIL import Image
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, NameObject
 
-from easyread import obsidian_figures, pdfwork
-from easyread.i18n import tr
-from easyread.store import Workspace
+from easyread import obsidian_figures
+from easyread.pdf import pdfwork
+from easyread.app.i18n import tr
+from easyread.library.store import Workspace
 
 
 class ObsidianFiguresTest(unittest.TestCase):

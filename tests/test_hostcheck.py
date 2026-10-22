@@ -12,7 +12,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from easyread import launch, server
+from easyread.server import launch
+from easyread.server import server
 
 TITLE = "SecretTitleQ7Zx"
 MINI_PDF = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"

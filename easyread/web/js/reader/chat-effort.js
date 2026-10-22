@@ -6,6 +6,7 @@
   PR.chatEffort = {
     levels(m, catalog) {
       if (m.engine === "claude") return /haiku/i.test(m.model || "") ? [] : ["low", "medium", "high", "xhigh", "max"];
+      if (PR.agentClis && PR.isAgentCli(m.engine)) return PR.agentClis[m.engine].efforts;
       const source = catalog && catalog.codex;
       const hit = source && (source.models || []).find((x) => x.id === (m.model || source.default));
       if (m.engine === "codex" && hit && hit.reasoning_levels && hit.reasoning_levels.length) return hit.reasoning_levels;

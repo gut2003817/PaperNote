@@ -1,8 +1,8 @@
 /* 设置 → 模型：翻译和“问 AI”合在一页。
-   上面一排卡片是你能用的模型（Claude Code / Codex / 各家 API），每张卡片可以标“翻译”和“问 AI 默认”；
+   上面一排卡片是你能用的模型（Claude Code / Codex / Grok / Antigravity / Cursor / CodeBuddy CLI / 各家 API），每张卡片可以标“翻译”和“问 AI 默认”；
    点卡片弹出菜单：设为翻译、设为问 AI、改 Key 和地址（只有 API 卡片）、删除；拖动卡片排序。添加时下面出现来源卡片和模型选择，API 的表单见 settings-api.js。
    下面是翻译自己的设置（每批几页、同时译几段、导入后自动翻译、试译一句）。
-   存的时候：翻译用的那张卡片写进 config 的 engine / claude / codex / openai（后台翻译读这些），整份名单写进 chat.models。
+   存的时候：翻译用的那张卡片写进 config 的 engine 和对应配置（后台翻译读这些），整份名单写进 chat.models。
    API 的 Key 每家只存一份，翻译和问 AI 共用。 */
 (function (PR) {
   "use strict";
@@ -17,7 +17,7 @@
     const c = s.cfg, e = c.engine;
     if (m.engine !== e) return false;
     if (["reasoning_effort", "service_tier"].some((k) => (m[k] || "") !== (c[e][k] || ""))) return false;
-    if (e === "claude" || e === "codex") return (m.model || "") === (c[e].model || "");
+    if (PR.isCli(e)) return (m.model || "") === (c[e].model || "");
     const o = c.openai, p = preset(s, m.preset);
     return (m.preset || "") === (o.preset || "") && (m.model || "") === (o.model || "") &&
       (m.base_url || (p ? p.base_url : "")) === (o.base_url || "");
@@ -63,10 +63,10 @@
   function useForTranslation(s, m) {
     const c = s.cfg;
     if (m.engine === "openai") {
-      const p = preset(s, m.preset), typed = (s.chatKeys || {})[m.preset];
+      const p = preset(s, m.preset), typed = (s.chatKeys || {})[PR.apiKeyId(m.preset, m.base_url)];
       const rec = ((p && p.models) || []).find((x) => x.id === m.model);
       Object.assign(c.openai, { preset: m.preset || "", base_url: m.base_url || (p ? p.base_url : ""), api: m.api || (p && p.api) || "chat",
-        model: m.model, api_key: typed || (PR.apiHasKey(s, m.preset) ? "••••" : ""), vision: rec ? !!rec.vision : !!c.openai.vision });
+        model: m.model, api_key: typed || (PR.apiHasKey(s, m.preset, m.base_url) ? "••••" : ""), vision: rec ? !!rec.vision : !!c.openai.vision });
     } else {
       if (m.engine === "codex" && c.codex.model !== (m.model || "")) c.codex.reasoning_effort = "";
       c[m.engine].model = m.model || "";
@@ -82,7 +82,7 @@
     return '<div class="engine-cards mc-cards">' + list.map((m, i) => {
       const def = s.chat.default === m.id, tr = i === ti;
       const tags = (tr ? '<span class="badge ok">' + PR.t("翻译") + "</span>" : "") + (def ? '<span class="badge ok">' + PR.t("问 AI 默认") + "</span>" : "");
-      const bad = m.ready === false ? '<span class="badge bad" title="' + PR.esc(m.hint || "") + '">' + PR.esc(m.hint || PR.t("还不能用")) + "</span>" : "";
+      const bad = m.ready === false ? '<span class="badge bad" title="' + PR.esc(m.hint || "") + '">' + PR.esc(m.engine === "openai" ? PR.t("未填 API Key") : PR.t("还不能用")) + "</span>" : "";
       return '<div class="mc' + (tr || def ? " on" : "") + (s.editing === m.id ? " editing" : "") + (m.ready === false ? " off" : "") + '" data-cm="more" data-i="' + i + '" draggable="true" role="button" tabindex="0" title="' + PR.t("点一下设置，拖动排序") + '">' +
         '<span class="mc-more">' + PR.icon("more", "sm") + "</span>" +
         "<b>" + PR.esc(m.label || m.name) + "</b>" + PR.esc(m.source || "") +
@@ -96,8 +96,14 @@
     const f = s.form;
     const card = (k, title) => '<button data-cmk="' + k + '" class="' + (f.kind === k ? "on" : "") + '"><b>' + title + "</b></button>";
     let h = '<div class="mc-form"><h4 class="set-h">' + (s.editing === "new" ? PR.t("添加模型") : PR.t("修改")) + "</h4>" +
-      '<div class="engine-cards small">' + card("claude", "Claude Code") + card("codex", "Codex CLI") + card("api", PR.t("API 接口")) + "</div>";
-    if (f.kind === "claude" || f.kind === "codex") {
+      '<div class="engine-cards small">' + card("claude", "Claude Code") + card("codex", "Codex CLI") +
+      Object.keys(PR.agentClis).map((k) => card(k, PR.agentClis[k].name)).join("") + card("api", PR.t("API 接口")) + "</div>";
+    if (PR.isAgentCli(f.kind)) {  // 没有现成的模型名单：自己填，空着用 CLI 自己的默认
+      const found = (s.found || {})[f.kind], a = PR.agentClis[f.kind];
+      h += '<label class="field"><span>' + PR.t("模型") + '</span><input class="input" id="cmModel" value="' + PR.esc(f.model || "") + '" placeholder="' + PR.t("留空用它自己的默认模型") + '"></label>' +
+        (found && !found.found ? '<p class="hint">' + PR.t("本机没找到 {name}", { name: '<a href="' + a.url + '" target="_blank" rel="noopener">' + a.name + "</a>" }) + "</p>" : "");
+      if (a.hint) h += '<p class="hint">' + PR.esc(a.hint) + ' · <a href="' + a.url + '" target="_blank" rel="noopener">' + PR.esc(a.setup) + " ↗</a></p>";
+    } else if (f.kind === "claude" || f.kind === "codex") {
       const found = (s.found || {})[f.kind];
       h += '<label class="field"><span>' + PR.t("模型") + "</span>" + PR.cliModelSelect(s, f.kind, f.model, 'id="cmModel"') + "</label>" +
         (found && !found.found ? '<p class="hint">' + PR.t("本机没找到 {name}", { name: f.kind === "claude" ? '<a href="https://docs.claude.com/en/docs/claude-code/setup" target="_blank" rel="noopener">Claude Code</a>' : "Codex CLI" }) + "</p>" : "");
@@ -109,6 +115,7 @@
       '<button class="btn sm" data-cm="cancel">' + (s.editing === "new" ? PR.t("取消") : PR.t("关闭")) + '</button>' + (s.editing === "new" ? '<button class="btn sm accent" data-cm="ok">' + PR.t("添加") + "</button>" : "") + "</div></div>";
   }
   function autoName(s, f) {
+    if (PR.isAgentCli(f.kind)) return f.model || PR.agentClis[f.kind].name;
     if (f.kind === "claude" || f.kind === "codex") {  // 卡片名就是模型名
       const o = PR.cliModelOptions(s, f.kind, f.model).find(([v]) => v === (f.model || ""));
       return o ? o[1] : f.model || (f.kind === "claude" ? "Claude" : "GPT");
@@ -120,9 +127,9 @@
     const api = isApi(f.kind), name = autoName(s, f);
     return { engine: api ? "openai" : f.kind, preset: api ? f.preset : "",
       base_url: api && (!p || f.base_url !== p.base_url) ? f.base_url : "", api: api && (!p || f.api !== (p.api || "chat")) ? f.api : "", model: f.model, name, label: name,
-      source: api ? (p ? p.name : "自定义地址") :  // i18n-ok 存进模型名单的来源名
-      f.kind === "claude" ? "Claude Code" : "Codex CLI",
-      reasoning_effort: f.reasoning_effort || "", service_tier: f.kind === "claude" ? "" : f.service_tier || "",
+      source: api ? (p ? p.name : (PR.customApis.find(s, f.base_url) || {}).name || PR.t("自定义地址")) :  // i18n-ok 存进模型名单的来源名
+      PR.cliName(f.kind),
+      reasoning_effort: f.reasoning_effort || "", service_tier: f.kind === "claude" || PR.isAgentCli(f.kind) ? "" : f.service_tier || "",
       detail: f.model, ready: true };
   }
   function readForm(s) {
@@ -141,6 +148,7 @@
     s.form = m ? { kind: kindOf(m), model: m.model || "", preset: m.preset || "", base_url: m.base_url || (p ? p.base_url : ""), api: m.api || (p && p.api) || "chat", vision: false,
       name: "", key: "" }
       : { kind: "claude", model: "opus", preset: "", base_url: "", api: "", name: "", key: "" };
+    s.form.connection_name = m && !m.preset ? (PR.customApis.find(s, m.base_url) || {}).name || "" : "";
     s.fetchMsg = null; s.apiTyping = false;
     s.form.reasoning_effort = m && m.reasoning_effort || "";
     s.form.service_tier = m && m.service_tier || "";
@@ -151,14 +159,17 @@
     const c = s.cfg, ti = transIndex(s), m = s.chat.models[ti];
     const e = c.engine;
     let h = '<h4 class="set-h">' + (m ? PR.t("翻译：{name}", { name: PR.esc(m.label || m.name) }) : PR.t("翻译")) + "</h4>";
-    if (m) h += '<p class="hint">' + PR.t("推理强度") + ': ' + PR.esc(m.reasoning_effort || PR.modelDefaultLabel(s, { kind: kindOf(m), model: m.model }, "reasoning_effort")) +
-      (e === "claude" ? "" : ' · Fast: ' + PR.esc(m.service_tier || PR.modelDefaultLabel(s, { kind: kindOf(m), model: m.model }, "service_tier"))) + '</p>';
+    if (m && !(PR.isAgentCli(e) && !PR.agentClis[e].efforts.length)) h += '<p class="hint">' + PR.t("推理强度") + ': ' + PR.esc(m.reasoning_effort || PR.modelDefaultLabel(s, { kind: kindOf(m), model: m.model }, "reasoning_effort")) +
+      (e === "claude" || PR.isAgentCli(e) ? "" : ' · Fast: ' + PR.esc(m.service_tier || PR.modelDefaultLabel(s, { kind: kindOf(m), model: m.model }, "service_tier"))) + '</p>';
     if (e === "openai") h += '<label class="check" style="margin:0 0 10px"><input type="checkbox" data-k="openai.vision"' + (c.openai.vision ? " checked" : "") + ">" + PR.t("模型能看图") + "</label>";
     h += '<div class="grid2 translation-limits">' +
       '<label class="field"><span>' + PR.t("每批页数") + '</span><select class="input" data-k="batch_pages">' + PR.opt([[1, PR.t("1 页")], [2, PR.t("2 页")], [3, PR.t("3 页")], [4, PR.t("4 页")]], c.batch_pages) + "</select></label>" +
-      '<label class="field" title="' + PR.t("把全文切成几段同时译，段内按顺序译；自动按篇幅每段约 2 批、最多 4 段；手动最多 8 段") + '"><span>' + PR.t("同时译几段") + '</span><select class="input" data-k="concurrency">' + PR.opt([[0, PR.t("自动")], [1, "1"], [2, "2"], [3, "3"], [4, "4"], [5, "5"], [6, "6"], [7, "7"], [8, "8"]], c.concurrency || 0) + "</select></label>" +
+      '<label class="field" title="' + PR.t("把全文切成几段同时译，段内按顺序译；自动按篇幅每段约 2 批、最多 4 段；手动最多 8 段") + '"><span>' + PR.t("每篇同时译几段") + '</span><select class="input" data-k="concurrency">' + PR.opt([[0, PR.t("自动")], [1, "1"], [2, "2"], [3, "3"], [4, "4"], [5, "5"], [6, "6"], [7, "7"], [8, "8"]], c.concurrency || 0) + "</select></label>" +
+      '<label class="field"><span>' + PR.t("同时翻译几篇") + '</span><select class="input" data-k="paper_concurrency" aria-describedby="paperConcurrencyNote">' + PR.opt([[1, PR.t("1 篇（默认，逐篇处理）")], [2, PR.t("2 篇（并行）")], [3, PR.t("3 篇（并行）")], [4, PR.t("4 篇（并行，上限）")]], Number.isInteger(c.paper_concurrency) ? Math.max(1, Math.min(4, c.paper_concurrency)) : 1) + "</select></label>" +
       '<label class="field"><span>' + PR.t("超过多少页先问我") + '</span><select class="input" data-k="page_cap">' + PR.opt([30, 60, 100, 200].map((n) => [n, PR.t("{n} 页", { n })]).concat([[0, PR.t("不限")]]), c.page_cap == null ? 60 : c.page_cap) + "</select></label></div>" +
+      '<div class="paper-concurrency-note" id="paperConcurrencyNote" role="note">' + PR.t("多篇并行会与单篇分段并发叠加，增加内存占用并可能触发模型限流，建议保持默认 1 篇，最多 4 篇，修改后重启 EasyRead 生效。") + '</div>' +
       '<div class="test-line"><button class="btn sm line" id="testBtn">' + PR.icon("sparkle", "sm") + PR.t("试译一句") + '</button><span class="test-result" id="testRes"></span></div>';
+    h += '<label class="field"><span>' + PR.t("翻译补充要求") + '</span><textarea class="input" data-k="translation_instructions" rows="3" maxlength="4000" placeholder="' + PR.t("例如：KV cache 保留英文，不翻译专业术语") + '">' + PR.esc(c.translation_instructions || "") + '</textarea><small>' + PR.t("自动保存，应用于之后的翻译和重译；不改变已有译文。") + '</small></label>';
     return h;
   }
   /* 页面上翻译那几项的值读回 cfg（存的时候 settings.js 从 cfg 取） */
@@ -166,7 +177,7 @@
     PR.$$("[data-k]", root()).forEach((el) => {
       const [a, b] = el.dataset.k.split(".");
       const v = el.type === "checkbox" ? el.checked : el.value;
-      if (b) s.cfg[a][b] = v; else s.cfg[a] = ["batch_pages", "concurrency", "page_cap"].includes(a) ? +v : v;
+      if (b) s.cfg[a][b] = v; else s.cfg[a] = ["batch_pages", "concurrency", "paper_concurrency", "page_cap"].includes(a) ? +v : v;
     });
   }
 
@@ -177,7 +188,8 @@
     if (api && !f.model) { PR.toast(PR.t("填一个模型名")); return false; }
     const typed = f.key && !f.key.startsWith("••••") ? f.key : "";
     if (api && p && p.key && !PR.apiHasKey(s, f.preset) && !typed) { PR.toast(PR.t("这家要填 API Key")); return false; }
-    if (api && typed) (s.chatKeys = s.chatKeys || {})[f.preset] = typed;
+    if (api && typed) (s.chatKeys = s.chatKeys || {})[PR.apiKeyId(f.preset, f.base_url)] = typed;
+    if (api && !p && !PR.customApis.save(s, f, "key")) return false;
     const m = toModel(s, f, p);
     if (s.editing === "new") list.push(Object.assign(m, { id: "m" + Date.now().toString(36) }));
     else {
@@ -203,6 +215,10 @@
     },
     sync(s) { readForm(s); readTranslation(s); },
     change(e, s) {
+      if (e.target.matches("[data-custom-connection]") && s.form) {
+        PR.customApis.select(s, s.form, e.target.value, "key");
+        return true;
+      }
       if (e.target.dataset.k) { readTranslation(s); PR.saveModelSettings(); return false; }
       if (e.target.dataset.reasoning) { readForm(s); autoSaveForm(s); return true; }
       if (s.form && isApi(s.form.kind)) {
@@ -212,6 +228,7 @@
         autoSaveForm(s); return changed;
       }
       if (e.target.id === "cmModel" && e.target.tagName === "SELECT") { readForm(s); s.form.reasoning_effort = s.form.service_tier = ""; autoSaveForm(s); return true; }
+      if (e.target.id === "cmModel") { readForm(s); autoSaveForm(s); return false; }  // 通用 CLI 自己填的模型名
       return false;
     },
     async click(e, s) {
@@ -240,7 +257,7 @@
         autoSaveForm(s);
         return true;
       }
-      if (s.form && isApi(s.form.kind) && e.target.closest("[data-af-preset], [data-fetch-models]")) {
+      if (s.form && isApi(s.form.kind) && e.target.closest("[data-af-preset], [data-fetch-models], [data-custom-save]")) {
         readForm(s);
         if (e.target.closest("[data-af-preset]")) s.form.reasoning_effort = s.form.service_tier = "";
         const changed = await PR.apiForm.click(e, s, s.form, "key", root());

@@ -1,6 +1,6 @@
 [project]
 name = "easyread"
-version = "1.3.1"
+version = "1.4.4"
 description = "EasyRead：把英文论文读成舒服的中文——后台翻译、对照原文、批注笔记、文献库"
 readme = "README.md"
 license = { text = "MIT" }
@@ -16,14 +16,14 @@ dependencies = [
 ]
 
 [project.scripts]
-easyread = "easyread.cli:main"
+easyread = "easyread.app.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["easyread"]
+packages.find = { include = ["easyread*"] }
 
 [tool.setuptools.package-data]
-easyread = ["check_tex.js", "web/*", "web/**/*"]
+easyread = ["library/check_tex.js", "web/*", "web/**/*"]

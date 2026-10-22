@@ -7,7 +7,7 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 
-from .i18n import tr
+from .app.i18n import tr
 
 _BAD_NAME = re.compile(r'[/\\:*?"<>|]')
 

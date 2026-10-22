@@ -11,7 +11,8 @@
     const lang = PR.targetName(targetCode());
     return {
       original: PR.t("原文"), translation: PR.t("译文"), both: PR.t("双语"),
-      originalFull: PR.t("{lang}原文", { lang: PR.t("英文") }), translationFull: PR.t("{lang}译文", { lang }),
+      // 译成英文时原文多半不是英文（#48），只叫“原文”
+      originalFull: targetCode() === "en" ? PR.t("原文") : PR.t("{lang}原文", { lang: PR.t("英文") }), translationFull: PR.t("{lang}译文", { lang }),
     };
   };
   /* 切换显示方式：mode 和 lead / biOrder 一起改，再走 setPref 保住阅读位置 */
@@ -115,15 +116,16 @@
     const title = PR.$("#paper .paper-head h1"), meta = S.paper.meta;
     const secondary = PR.$("#paper .title-en");
     if (title && secondary && meta && meta.title_zh && meta.title_en) {
-      title.textContent = first ? meta.title_en : meta.title_zh;
-      secondary.textContent = first ? meta.title_zh : meta.title_en;
-      title.lang = first ? "en" : "";
-      secondary.lang = first ? "" : "en";
+      title.innerHTML = PR.titleHtml(first ? meta.title_en : meta.title_zh);
+      secondary.innerHTML = PR.titleHtml(first ? meta.title_zh : meta.title_en);
+      const orig = meta.target === "en" ? "" : "en";  // 译成英文时原标题不一定是英文
+      title.lang = first ? orig : "";
+      secondary.lang = first ? "" : orig;
     }
     const description = PR.$(".reading-language-description");
     if (description && !document.body.classList.contains("en-only") && !((S.paper.translation || {}).en_pages || []).length) {
       const v = PR.readingView();
-      description.textContent = v === "both" ? PR.t("正文是原文和译文") : v === "original" ? PR.t("正文是英文原文") : PR.t("正文是译文");
+      description.textContent = v === "both" ? PR.t("正文是原文和译文") : v === "original" ? (targetCode() === "en" ? PR.t("正文是原文") : PR.t("正文是英文原文")) : PR.t("正文是译文");
     }
     PR.hideBlockbar && PR.hideBlockbar();
   };

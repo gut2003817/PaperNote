@@ -33,16 +33,17 @@
 
   /* 正文 HTML：对得上就一句一个 span，否则和原来一样整段 PR.md。side：en 原文 / zh 译文 */
   PR.sentMd = function (key, side, text) {
+    const md = (value) => PR.md(value, PR.footnoteOptions ? PR.footnoteOptions(key) : {});
     const s = PR.alignOf(key), o = objOf(key);
-    if (!s || !o || (side === "zh" && PR.editOf(key)) || text !== (side === "en" ? o.en : o.zh)) return PR.md(text);
+    if (!s || !o || (side === "zh" && PR.editOf(key)) || text !== (side === "en" ? o.en : o.zh)) return md(text);
     const col = side === "en" ? 0 : 1;
     const parts = [];
     let prev = 0;
     for (const row of s) { parts.push(text.slice(prev, row[col])); prev = row[col]; }
-    if (!parts.every(balanced)) return PR.md(text);  // 句界切在 **粗体** 或公式中间：不切，整段显示
+    if (!parts.every(balanced)) return md(text);  // 句界切在 **粗体** 或公式中间：不切，整段显示
     return parts.map((p, i) => {
       const lead = p.match(/^\s*/)[0];
-      return lead + '<span class="snt" data-s="' + i + '">' + PR.md(p.slice(lead.length)) + "</span>";
+      return lead + '<span class="snt" data-s="' + i + '">' + md(p.slice(lead.length)) + "</span>";
     }).join("");
   };
 
@@ -75,18 +76,20 @@
     const byNote = {};  // 一次取出所有划线按笔记分组，不必每条笔记查一遍全文
     PR.$$("mark.hl[data-note]", scope).forEach((m) => (byNote[m.dataset.note] = byNote[m.dataset.note] || []).push(m));
     for (const n of PR.myNotes()) {
-      const marks = n.quote && byNote[n.id];
-      if (!marks) continue;
-      const src = marks[0].closest(".zh, .en");
-      const other = src && partner(src);
-      if (!other) continue;
-      const idx = new Set(marks.map((m) => m.closest(".snt")).filter(Boolean).map((sp) => sp.dataset.s));
-      const spans = idx.size ? PR.$$(":scope .snt", other).filter((sp) => idx.has(sp.dataset.s)) : [];
-      const targets = spans.length ? spans : [other];
-      const cls = [spans.length ? "mir" : "mir-para", "c-" + (n.color || "yellow")].concat(n.kind === "question" ? ["mir-q"] : []);
-      const tip = isEnEl(src) ? PR.t("对应原文里的标注") : PR.t("对应译文里的标注");
-      // 同一处有几条标注时留第一条（按时间排在前面的），颜色不会叠在一起
-      targets.filter((t) => !t.dataset.mirror).forEach((t) => { t.classList.add(...cls); t.dataset.mirror = n.id; t.title = tip; });
+      if (!n.quote || !byNote[n.id]) continue;
+      const bySrc = new Map();  // 跨段的划线每段各自同步到对应的那段
+      byNote[n.id].forEach((m) => { const src = m.closest(".zh, .en"); if (src) bySrc.set(src, (bySrc.get(src) || []).concat(m)); });
+      for (const [src, marks] of bySrc) {
+        const other = partner(src);
+        if (!other) continue;
+        const idx = new Set(marks.map((m) => m.closest(".snt")).filter(Boolean).map((sp) => sp.dataset.s));
+        const spans = idx.size ? PR.$$(":scope .snt", other).filter((sp) => idx.has(sp.dataset.s)) : [];
+        const targets = spans.length ? spans : [other];
+        const cls = [spans.length ? "mir" : "mir-para", "c-" + (n.color || "yellow")].concat(n.kind === "question" ? ["mir-q"] : []);
+        const tip = isEnEl(src) ? PR.t("对应原文里的标注") : PR.t("对应译文里的标注");
+        // 同一处有几条标注时留第一条（按时间排在前面的），颜色不会叠在一起
+        targets.filter((t) => !t.dataset.mirror).forEach((t) => { t.classList.add(...cls); t.dataset.mirror = n.id; t.title = tip; });
+      }
     }
   };
 

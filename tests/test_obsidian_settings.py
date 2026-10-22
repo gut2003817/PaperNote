@@ -6,7 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from easyread import config, settings_api
+from easyread.app import config
+from easyread.server import settings_api
 
 
 class ObsidianSettingsTest(unittest.TestCase):

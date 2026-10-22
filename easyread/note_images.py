@@ -11,7 +11,7 @@ import re
 import time
 from pathlib import Path
 
-from .i18n import tr
+from .app.i18n import tr
 
 DIR = "note-images"
 MAX_BYTES = 10 * 1024 * 1024

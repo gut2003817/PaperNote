@@ -7,8 +7,8 @@ from collections.abc import Callable
 from datetime import date
 from urllib.parse import quote
 
-from . import langs
-from .i18n import tr
+from .translate import langs
+from .app.i18n import tr
 
 _STRINGS = ("hook", "short", "problem", "method", "result", "limits")
 
@@ -270,7 +270,9 @@ def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None =
 def generate(ws, cfg: dict, cancel=None, model: str | None = None) -> dict:
     """先完成模型调用与解析，再新增笔记及附图，绝不覆盖已有文件。"""
     # chat_models → engines → config 有初始化依赖，调用时再载入。
-    from . import chat_models, engines, obsidian_context, obsidian_figures, obsidian_vault
+    from . import obsidian_context, obsidian_figures, obsidian_vault
+    from .chat import chat_models
+    from .engines import engines
 
     path = cfg.get("obsidian_vault", "")
     if not path:

@@ -21,7 +21,7 @@ easyread
 
 ```bash
 python -m unittest discover tests -v
-node --test tests/test_*.cjs
+node --test tests/web/test_*.cjs tests/desktop/test_*.cjs
 ```
 
 提 PR 后 GitHub Actions 会在 Windows、macOS、Linux 上自动跑一遍。第一次贡献的 PR 需要维护者点一下批准才会开始跑，稍等就好。
