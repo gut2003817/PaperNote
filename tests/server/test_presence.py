@@ -97,10 +97,10 @@ class ServerExitTest(unittest.TestCase):
         self.assertIn(b"403", resp.split(b"\r\n")[0])
 
     def test_keep_turns_off_auto_exit(self):
-        import json
         import urllib.request
         url = f"http://127.0.0.1:{self.port}"
-        token = json.loads(urllib.request.urlopen(url + "/api/library").read())["token"]
+        from easyread.app.cli import server_token
+        token = server_token(url)
         urllib.request.urlopen(urllib.request.Request(url + "/api/presence/keep", data=b"{}", headers={"X-Token": token}))
         a, _ = _ws_connect(self.port)
         a.close()

@@ -191,6 +191,8 @@
     if (api && typed) (s.chatKeys = s.chatKeys || {})[PR.apiKeyId(f.preset, f.base_url)] = typed;
     if (api && !p && !PR.customApis.save(s, f, "key")) return false;
     const m = toModel(s, f, p);
+    // 後端只把剛輸入的 Key 授權給這張卡片的地址（key_guard.py）：記下 Key 是在哪個地址輸入的
+    if (api && typed && f.preset) (s.chatKeyUrls = s.chatKeyUrls || {})[f.preset] = m.base_url || "";  // 自訂地址的 Key 本來就按地址分槽
     if (s.editing === "new") list.push(Object.assign(m, { id: "m" + Date.now().toString(36) }));
     else {
       const old = list.find((x) => x.id === s.editing), wasTr = sameAsTranslation(s, old);

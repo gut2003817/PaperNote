@@ -30,7 +30,7 @@ test("idle polling keeps loaded rows in place without an updating banner", async
   pending.resolve({ ...p.PR.lib.lastData, token: "renewed-token" }); await p.flush();
   assert.equal(p.rows[0], row);
   assert.equal(p.node(".main").scrollTop, 420);
-  assert.equal(p.PR.token, "renewed-token");
+  assert.notEqual(p.PR.token, "renewed-token");  // 資安加固：令牌只從頁面 <meta> 取，JSON 裡的 token 一律不採用
 });
 
 test("busy polling updates changed progress without showing a library-loading banner", async () => {
@@ -100,7 +100,7 @@ test("a slow reader has its return context immediately and fresh return keeps ca
   assert.equal(p.storage.get("easyread-library-list").includes("live-token"), false);
   live.resolve(data([paper("Updated article")])); await returned.flush();
   assert.match(returned.node("#list").innerHTML, /Updated article/);
-  assert.equal(returned.PR.token, "live-token");
+  assert.notEqual(returned.PR.token, "live-token");  // 資安加固：令牌只從頁面 <meta> 取，不從 /api/library
   article.reject(new Error("article failed")); await reader.flush();
   assert.match(reader.node("#paper").innerHTML, /\?library=/);
 });

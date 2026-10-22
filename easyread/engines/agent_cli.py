@@ -37,6 +37,11 @@ def path(engine: str, c: dict) -> str | None:
     """设置里填了命令就只认它；没填按默认名找（Cursor 新版叫 agent，旧版叫 cursor-agent）。
     Grok Build 也会装一个 agent（就是 grok 本身，和 grok.exe 放在一起）：旁边有 grok 的 agent 不算 Cursor。"""
     if c.get("command"):
+        from .. import cli_guard
+        try:  # 不是“看起来就是该 CLI”的命令就当没找到（和 claude / codex 一样，见 cli_guard）
+            cli_guard.check_command(engine, c["command"])
+        except ValueError:
+            return None
         return shutil.which(c["command"])
     for p in map(shutil.which, SPECS[engine]["commands"]):
         if p and not (engine == "cursor" and _grok_agent(p)):
@@ -51,6 +56,7 @@ def _grok_agent(p: str) -> bool:
 
 def run(engine: str, c: dict, prompt: str, cwd: Path, cancel=None, meter=None) -> str:
     from . import engines  # engines 引用了本文件，放这里免得循环导入
+    engines.guard(engine, c)  # 起子进程前：command / extra_args / model 不合法就不执行（和保存时同一套校验）
     exe = path(engine, c)
     name = SPECS[engine]["name"]
     if not exe:

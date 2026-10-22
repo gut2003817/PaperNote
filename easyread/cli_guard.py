@@ -1,4 +1,4 @@
-"""本机 CLI（claude / codex）相关配置的校验：这些值最后会变成子进程的可执行文件和命令行参数。
+"""本机 CLI（claude / codex / codebuddy / grok / agy / cursor）相关配置的校验：这些值最后会变成子进程的可执行文件和命令行参数。
 
 威胁：POST /api/config 只要带着令牌就能改配置，而 claude.command、codex.command 是要执行的程序，
 claude.extra_args、codex.extra_args 是追加到命令行的参数——都等于“让服务器运行任意程序”。
@@ -18,7 +18,11 @@ from pathlib import Path
 
 from .app.i18n import tr
 
-NAMES = {"claude": "claude", "codex": "codex"}
+# 每個本機 CLI 引擎能用的命令名（和 engines/agent_cli.SPECS、codebuddy_cli 的預設一致；tests 會對照）。
+NAMES = {"claude": ("claude",), "codex": ("codex",), "codebuddy": ("codebuddy",),
+         "grok": ("grok",), "agy": ("agy",), "cursor": ("agent", "cursor-agent")}
+# 上游新增的引擎：command 空著表示按預設名找（設定頁會送空字串）
+OPTIONAL_COMMAND = {"codebuddy", "grok", "agy", "cursor"}
 _EXTS = ("", ".cmd", ".exe")
 # shell 元字符、引号、通配符、环境变量展开（%）、控制字符（含换行）。反斜杠只在 Windows 路径里允许。
 _BAD = re.compile(r"[;|&$`<>()\"'*?%!{}\x00-\x1f\x7f]")
@@ -37,7 +41,7 @@ def _show(v) -> str:
 
 
 def _allowed_names(name: str) -> str:
-    return "/".join(NAMES[name] + e for e in _EXTS)
+    return "/".join(stem + e for stem in NAMES[name] for e in _EXTS)
 
 
 def check_command(name: str, value, field: str | None = None) -> str:
@@ -45,23 +49,26 @@ def check_command(name: str, value, field: str | None = None) -> str:
     合格 = 裸命令名（claude / claude.cmd / claude.exe），或绝对路径：文件名是这几个之一、文件存在且可执行。
     符号链接不追到目标（官方安装器就是把 claude 链到版本目录下的文件），只看路径本身的文件名。"""
     field = field or f"{name}.command"
-    bad = ValueError(tr("{field} 只能填命令名 {names}，或这个命令的绝对路径（文件必须存在且可执行），不能带参数、特殊符号或相对路径：{value}", field=field, names=_allowed_names(name), value=_show(value)))
+    def bad():  # 只在真的不合格時才組錯誤訊息（tr 可能要查系統語言）
+        return ValueError(tr("{field} 只能填命令名 {names}，或这个命令的绝对路径（文件必须存在且可执行），不能带参数、特殊符号或相对路径：{value}", field=field, names=_allowed_names(name), value=_show(value)))
+    if value == "" and name in OPTIONAL_COMMAND:
+        return value
     if type(value) is not str or not value or len(value) > _MAX_COMMAND:
-        raise bad
-    stem = NAMES[name]
+        raise bad()
+    names = {stem + e for stem in NAMES[name] for e in _EXTS}
     if "/" not in value and "\\" not in value:
-        if value.lower() in {stem + e for e in _EXTS}:  # 裸名：必须整个就是名字，带空格、参数、点号前缀都不行
+        if value.lower() in names:  # 裸名：必须整个就是名字，带空格、参数、点号前缀都不行
             return value
-        raise bad
+        raise bad()
     if not os.path.isabs(value):  # ./claude、../../bin/sh、~/bin/claude 都在这里被挡
-        raise bad
+        raise bad()
     if _BAD.search(value) or (os.name != "nt" and "\\" in value) or ".." in Path(value).parts:
-        raise bad
+        raise bad()
     base = re.split(r"[\\/]", value)[-1] if os.name == "nt" else os.path.basename(value)
-    if base.lower() not in {stem + e for e in _EXTS}:
-        raise bad
+    if base.lower() not in names:
+        raise bad()
     if not os.path.isfile(value) or not os.access(value, os.X_OK):
-        raise bad
+        raise bad()
     return value
 
 
@@ -98,6 +105,8 @@ def _v_codex_config(v):
 ALLOWED_ARGS = {
     "claude": {"--model": _v_model, "--fallback-model": _v_model, "--effort": _v_effort, "--max-budget-usd": _v_budget},
     "codex": {"-m": _v_model, "--model": _v_model, "-c": _v_codex_config, "--config": _v_codex_config},
+    # 上游新增的 CLI：不確定哪些參數無害（可能有 --yolo、MCP、權限之類），保守起見 extra_args 只能是空的
+    "codebuddy": {}, "grok": {}, "agy": {}, "cursor": {},
 }
 
 
@@ -110,6 +119,8 @@ def check_extra_args(name: str, value, field: str | None = None) -> list:
     for tok in value:
         if type(tok) is not str:
             raise ValueError(tr("{field} 的每一项都必须是字符串：{value}", field=field, value=_show(tok)))
+    if not table and value:
+        raise ValueError(tr("{field} 不支持额外参数，只能留空", field=field))
     i = 0
     while i < len(value):
         tok = value[i]
@@ -128,7 +139,8 @@ def check_extra_args(name: str, value, field: str | None = None) -> list:
 
 
 _SECTION_KEYS = {"claude": {"command", "model", "reasoning_effort", "extra_args", "timeout", "lean"},
-                 "codex": {"command", "model", "reasoning_effort", "service_tier", "extra_args", "timeout", "lean"}}
+                 "codex": {"command", "model", "reasoning_effort", "service_tier", "extra_args", "timeout", "lean"},
+                 **{n: {"command", "model", "reasoning_effort", "extra_args", "timeout"} for n in OPTIONAL_COMMAND}}
 
 
 def check_section(name: str, sec, *, save: bool = True) -> None:
@@ -167,7 +179,7 @@ def check_chat_models(items) -> None:
     if not isinstance(items, list) or any(not isinstance(m, dict) for m in items):
         raise ValueError(tr("问 AI 的模型名单必须是对象数组"))
     for k, m in enumerate(items):
-        if m.get("engine") in ("claude", "codex"):
+        if m.get("engine") in NAMES:
             where = f"chat.models[{k}]"
             check_model(m.get("model") or "", where + ".model")
             for key in ("reasoning_effort", "service_tier"):
@@ -176,7 +188,7 @@ def check_chat_models(items) -> None:
 
 def check_patch(patch: dict) -> None:
     """POST /api/config 的整个补丁：任何一处不合法就整个拒绝（调用方在写盘之前调用）。"""
-    for name in ("claude", "codex"):
+    for name in NAMES:
         if name in patch:
             check_section(name, patch[name])
     if "chat" in patch:

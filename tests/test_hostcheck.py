@@ -91,7 +91,9 @@ class GoodHostTest(HostCheckBase):
             for path in ("/", "/api/library"):
                 status, head, content = raw(self.port, "GET", path, host)
                 self.assertEqual(status, 200, (host, path, head))
-            self.assertIn(self.token, raw(self.port, "GET", "/api/library", host)[2].decode())
+            # 令牌只在頁面 HTML 的 <meta> 裡，JSON 接口不再回傳
+            self.assertIn(f'<meta name="easyread-token" content="{self.token}">', raw(self.port, "GET", "/", host)[2].decode())
+            self.assertNotIn(self.token, raw(self.port, "GET", "/api/library", host)[2].decode())
 
     def test_legit_ipv6_host_header(self):
         # 服务只绑 IPv4，这里不用 [::1] 连线，只验证带 [::1] Host 标头的请求会被接受

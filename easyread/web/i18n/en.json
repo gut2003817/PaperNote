@@ -1442,5 +1442,16 @@
   "图片格式不支持或尺寸过大": "The image format is unsupported or its dimensions are too large.",
   "图片转存后过大，请缩小图片后重新粘贴": "The decoded image is too large. Resize it and paste it again.",
   "图片无法读取，请重新复制后粘贴": "Could not read the image. Copy and paste it again.",
-  "图片目录无效": "Invalid image directory."
+  "图片目录无效": "Invalid image directory.",
+ "接口地址必须以 http:// 或 https:// 开头": "The API address must start with http:// or https://",
+ "接口地址改了：为了不把已存的 API Key 发到新地址，请重新输入一次 API Key": "The API address changed. To avoid sending your saved API key to a new address, please enter the API key again",
+ "目标文件夹不属于当前用户，不能把文献库放在这里：{path}": "The target folder does not belong to the current user, so the library cannot be placed there: {path}",
+ "设置格式不对": "Invalid settings format",
+ "不认识的设置项：{key}": "Unknown setting: {key}",
+ "设置项 {key} 的格式不对": "Invalid value for setting {key}",
+ "这个接口地址没有被认可使用已存的 API Key：请在设置里为它重新输入一次 API Key": "This API address is not authorized to use the saved API key. Enter the API key again for it in Settings",
+ "目标文件夹其他用户也能写入，不能把文献库放在这里：{path}": "Other users can write to the target folder, so the library cannot be placed there: {path}",
+ "目标文献库里有不属于当前用户的文件，不能使用或合并：{path}": "The target library contains files not owned by the current user, so it cannot be used or merged: {path}",
+ "目标文献库里有其他用户也能写入的文件或文件夹，不能使用或合并：{path}": "The target library contains files or folders other users can write to, so it cannot be used or merged: {path}",
+ "{field} 不支持额外参数，只能留空": "{field} does not accept extra arguments; leave it empty"
 }

@@ -59,7 +59,8 @@ async function desktop(platform = "darwin", lock = true, ready = true, argv = []
       requests.push(url.pathname);
       const req = new EventEmitter(); req.setTimeout = () => {}; req.end = () => queueMicrotask(() => {
         const res = new EventEmitter(); res.statusCode = 200; res.setEncoding = () => {}; callback(res);
-        res.emit("data", JSON.stringify(url.pathname === "/api/library" ? { token: "test-token" } : { ok: true }));
+        // 資安加固：令牌只在首頁 HTML 的 <meta name="easyread-token">（electron/main.cjs 的 backendToken）
+        res.emit("data", url.pathname === "/" ? '<head>\n<meta name="easyread-token" content="abc123">' : JSON.stringify({ ok: true }));
         res.emit("end");
         if (url.pathname === "/api/shutdown") launches[launches.length - 1].child.kill();
       }); return req;

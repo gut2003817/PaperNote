@@ -105,8 +105,13 @@ class CodeBuddyCliTest(unittest.TestCase):
 
     def test_path_dispatch_and_model_mapping(self):
         with mock.patch.object(codebuddy_cli.shutil, "which", return_value="custom.exe") as which:
-            self.assertEqual(engines.cli_path("codebuddy", {"command": "custom"}), "custom.exe")
-            which.assert_called_once_with("custom")
+            self.assertEqual(engines.cli_path("codebuddy", {"command": "codebuddy.cmd"}), "custom.exe")
+            which.assert_called_once_with("codebuddy.cmd")
+            # 資安加固：command 不是 codebuddy 的命令名（或其絕對路徑）就當沒找到，不會被執行（cli_guard）
+            which.reset_mock()
+            self.assertIsNone(engines.cli_path("codebuddy", {"command": "custom"}))
+            self.assertIsNone(engines.cli_path("codebuddy", {"command": "/bin/sh"}))
+            which.assert_not_called()
         items = chat_models.sanitize([{"id": "cb", "name": "Buddy", "engine": "codebuddy", "model": "chosen"}])
         cfg = config.DEFAULTS | {"chat": {"models": items, "default": "cb"}}
         ecfg, _ = chat_models.engine_cfg(cfg, "cb")

@@ -98,7 +98,6 @@
       JSON.stringify([d.items, d.engine, d.engine_label, d.first_run, d.version, d.trash || 0]);
     L.lastData = d;  // 切换界面语言前存一份，刷新后先拿它画列表，不闪空白（lang-toggle.js）
     L.loadStatus = cached ? "loading" : "ready"; L.loadError = "";
-    if (!cached) PR.token = d.token;
     L.engine = d.engine;
     L.engineLabel = d.engine_label;
     L.firstRun = d.first_run;

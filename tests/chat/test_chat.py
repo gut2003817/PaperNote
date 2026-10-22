@@ -29,7 +29,8 @@ class ChatStreamTest(unittest.TestCase):
         srv = ThreadingHTTPServer(("127.0.0.1", 0), FakeAPI)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         try:
-            cfg = {"engine": "openai", "openai": {"base_url": f"http://127.0.0.1:{srv.server_address[1]}/v1", "model": "fake", "api_key": "k"}}
+            cfg = {"engine": "openai", "openai": {"base_url": f"http://127.0.0.1:{srv.server_address[1]}/v1", "model": "fake", "api_key": "k",
+                                                 "key_origins": {"": [f"http://127.0.0.1:{srv.server_address[1]}"]}}}
             out = "".join(chat.stream(cfg, "问题", None, threading.Event()))
         finally:
             srv.shutdown()

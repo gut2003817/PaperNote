@@ -102,6 +102,9 @@ def engine_cfg(cfg: dict, mid: str | None) -> tuple[dict, dict]:
                          "model": m.get("model") or (p["model"] if p else ""), "api_key": _key(cfg, m.get("preset") or "", m.get("base_url") or ""),
                          "api": m.get("api") or (p or {}).get("api") or "chat",
                          "reasoning_effort": m.get("reasoning_effort") or "", "service_tier": m.get("service_tier") or ""}
+        from .. import key_guard
+        if not key_guard.use_ok(out["openai"]):  # 卡片地址没被认可：不带上已存的 Key（防先埋卡片、后填 Key）
+            raise engines.EngineError(key_guard.use_refused_message())
     else:
         raise engines.EngineError(tr("不认识的模型来源：{engine}", engine=m.get("engine")))
     return out, m

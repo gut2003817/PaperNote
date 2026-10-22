@@ -20,6 +20,12 @@ from . import netcheck
 
 
 def path(c: dict) -> str | None:
+    if c.get("command"):
+        from .. import cli_guard
+        try:  # 不是“看起来就是 codebuddy”的命令就当没找到（见 cli_guard）
+            cli_guard.check_command("codebuddy", c["command"])
+        except ValueError:
+            return None
     return shutil.which(c.get("command") or "codebuddy")
 
 
@@ -63,6 +69,7 @@ def _result(out: str) -> dict:
 
 def run(c: dict, prompt: str, cwd: Path, images: list[Path], cancel=None, meter=None) -> str:
     from . import engines
+    engines.guard("codebuddy", c)  # 起子进程前：command / extra_args / model 不合法就不执行
     exe = path(c)
     if not exe:
         raise engines.EngineError(tr("找不到 {name} 命令：{cmd}（先装好并登录）", name="CodeBuddy CLI", cmd=c.get("command") or "codebuddy"))
