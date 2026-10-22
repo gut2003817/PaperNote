@@ -271,8 +271,11 @@ class Jobs:
                 elif job["kind"] == "retranslate":
                     translate.retranslate(ws, cfg, job["key"], job.get("hint", ""), None)
                 elif job["kind"] == "obsidian":
-                    result = obsidian_note.generate(ws, cfg, model=job.get("model"))
-                    for key in ("path", "figures", "diagrams", "skipped"):
+                    def progress(done, total):
+                        job["message"] = tr("正在生成 AI 示意图（{done}/{total}）", done=done, total=total)
+                    result = obsidian_note.generate(ws, cfg, model=job.get("model"),
+                                                    ai_images=bool(job.get("ai_images")), progress=progress)
+                    for key in ("path", "figures", "diagrams", "skipped", "ai_images", "ai_skipped", "ai_error"):
                         job[key] = result[key]
                 job["state"], job["message"] = "done", tr("完成")
             except Exception as e:  # noqa: BLE001

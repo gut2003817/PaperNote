@@ -446,3 +446,94 @@ def test_harden_inline_code_does_not_cross_blank_lines():
 def test_harden_quoted_fence_inside_plain_code_is_not_closer():
     text = '```\n> ```\n# code\n%% $$ {{mark:1}}\n```'
     assert obsidian_note._markdown(text) == text
+
+
+@pytest.mark.parametrize('engine,digest', [
+    ('claude', '8d90db6377ad1bb9ab035a158ae582b7c668146515f0aee0e34376b972259c5e'),
+    ('codex', '0ba04124962bbc6833b5f6d7378fdf31c79e6b383eed5a90b6cdcd7178a918a4'),
+    ('openai', '0ba04124962bbc6833b5f6d7378fdf31c79e6b383eed5a90b6cdcd7178a918a4')])
+def test_build_prompt_without_ai_images_unchanged(ctx, engine, digest):
+    import hashlib
+    assert hashlib.sha256(obsidian_note.build_prompt(ctx, engine, ai_images=False).encode()).hexdigest() == digest
+
+
+def test_build_prompt_with_ai_images_explains_field_and_img_marker(ctx):
+    text = obsidian_note.build_prompt(ctx, 'codex', ai_images=True)
+    for token in ('ai_images', 'cover', 'explain', '{{img:N}}', '英文', '0~3', '文字、字母、數字', '標誌'):
+        assert token in text
+
+
+def test_parse_reply_ai_images_normalized():
+    cover = {'kind': 'cover', 'desc': 42, 'prompt': 'a' * 1600}
+    explain = {'kind': 'explain', 'desc': 'concept', 'prompt': 'scene'}
+    raw = [None, {}, {'kind': 'bad', 'prompt': 'x'}, {'kind': 'explain', 'prompt': '  '},
+           {'kind': 'cover', 'prompt': None}, explain, cover, {'kind': 'cover', 'prompt': 'second'}] + [explain] * 4
+    parsed = obsidian_note.parse_reply(json.dumps({'ai_images': raw}))['ai_images']
+    assert parsed == [dict(cover, desc='', prompt='a' * 1500)] + [explain] * 3
+    assert obsidian_note.parse_reply('{}')['ai_images'] == []
+
+
+@pytest.fixture
+def ai_data(data):
+    data['ai_images'] = [{'kind': 'cover', 'desc': '核心', 'prompt': 'cover'},
+                         {'kind': 'explain', 'desc': '原理', 'prompt': 'first'},
+                         {'kind': 'explain', 'desc': '流程', 'prompt': 'second'}]
+    return data
+
+
+AI_FILES = {'cover': 'cover.png', 'explain-1': 'first.png', 'explain-2': 'second.png'}
+
+
+def test_render_cover_after_hook(ctx, ai_data):
+    text = obsidian_note.render(ctx, ai_data, {}, ai_files=AI_FILES)
+    assert text.index(ai_data['hook']) < text.index('cover.png') < text.index('## 問題與動機')
+
+
+def test_render_img_marker_inline_and_unplaced_after_method(ctx, ai_data):
+    ai_data['problem'] = 'before {{img:1}} after'
+    text = obsidian_note.render(ctx, ai_data, {}, ai_files=AI_FILES)
+    assert text.index('before') < text.index('first.png') < text.index('after') < text.index('## 方法重點')
+    assert text.index('方法說明') < text.index('second.png') < text.index('```mermaid')
+
+
+def test_render_img_invalid_and_duplicate_removed(ctx, ai_data):
+    ai_data['method'] = '{{img:1}} {{img:1}} {{img:0}} {{img:-1}} {{img:x}} {{img:3}} {{img:' + '9' * 5000 + '}}'
+    ai_data['limits'] = '```\n{{img:2}}\n```'
+    text = obsidian_note.render(ctx, ai_data, {}, ai_files=AI_FILES)
+    assert text.count('first.png') == 1 and text.count('second.png') == 1
+    assert text.count('{{img:') == 1 and '```\n{{img:2}}\n```' in text
+
+
+def test_render_no_ai_files_output_identical_to_before(ctx, data):
+    import hashlib
+    text = obsidian_note.render(ctx, data, {'fig-a': 'a.png'}, today='2026-10-22', ai_files={})
+    assert hashlib.sha256(text.encode()).hexdigest() == 'a133a34ded82936dcb7e8e82dbe637ee43f72f9c9da5b298c5ed5f6778c1db3e'
+    data['method'] += '{{img:1}} {{img:bad}}'
+    assert '{{img:' not in obsidian_note.render(ctx, data, {})
+
+
+def test_render_ai_image_labeled_as_ai_generated(ctx, ai_data):
+    text = obsidian_note.render(ctx, ai_data, {}, ai_files={'cover': 'a b(#).png'})
+    assert '![示意圖（AI 生成） 核心](附圖/a%20b%28%23%29.png)\n示意圖（AI 生成）：核心' in text
+
+
+def test_render_ai_desc_injection_no_second_h1(ctx, ai_data):
+    for image in ai_data['ai_images']:
+        image['desc'] = ']\n# injected\n```\n%% $$\x00'
+    text = obsidian_note.render(ctx, ai_data, {}, ai_files=AI_FILES)
+    assert re.findall(r'^# .*$', text, re.M) == ['# 論文標題']
+    assert '\\]' in text and '\x00' not in text
+    assert not _open_fence_at_end(text) and text.endswith('### 我的想法\n\n')
+
+
+def test_render_hook_img_deletion_cannot_create_heading(ctx, data):
+    data['hook'] = '#{{img:1}} injected\n```\n{{img:1}}\n```'
+    text = obsidian_note.render(ctx, data, {})
+    assert re.findall(r'^# .*$', text, re.M) == ['# 論文標題']
+    assert '```\n{{img:1}}\n```' in text
+
+
+def test_render_ai_desc_cannot_open_html_comment(ctx, ai_data):
+    ai_data['ai_images'][0]['desc'] = '<!-- injected'
+    text = obsidian_note.render(ctx, ai_data, {}, ai_files=AI_FILES)
+    assert '<!--' not in text

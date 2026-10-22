@@ -27,8 +27,10 @@
         (c[k] != null ? '<span class="n">' + PR.t("{n} 条", { n: c[k] }) + "</span>" : "") + "</label>").join("") +
       '</div><p class="hint">' + PR.t("导出成 Markdown，按原文章节顺序排，可以直接放进 Obsidian、Notion。") + PR.t("笔记里有图片时导出成 zip（含图片文件）。") + "</p>" +
       (pdfOk() ? '<p class="hint">' + PR.t("也可以把划线标到英文原 PDF 上，另存一份副本（原文件不动）：译文上的划线标对应的整句英文，原文上的划线标原话。") + "</p>" : "") +
-      (obsOk() ? '<p class="hint"><button class="btn line" data-exp-obs' + (obsRunning ? " disabled" : "") + ">" + PR.t("写进 Obsidian") + '</button> <span data-obs-status>' + (obsRunning ? PR.t("模型思考中，约需一两分钟") : "") + "</span><br>" +
-        PR.t("会用到你的 AI 额度，只有按下才会执行；不会覆盖已有的文件。") + "</p>" : "") +
+      (obsOk() ? '<p class="hint"><button class="btn line" data-exp-obs' + (obsRunning ? " disabled" : "") + ">" + PR.t("写进 Obsidian") + "</button> " +
+        '<label><input type="checkbox" data-obs-ai' + (PR.ls.get("easyread-obs-ai", false) ? " checked" : "") + ">" + PR.t("含 AI 示意图") + "</label> " +
+        '<span data-obs-status>' + (obsRunning ? PR.t("模型思考中，约需一两分钟") : "") + "</span><br>" +
+        PR.t("会用到你的 AI 额度，只有按下才会执行；不会覆盖已有的文件。") + PR.t("勾选 AI 示意图会再用 Codex 画 1~4 张图，每张约一分钟。") + "</p>" : "") +
       '<div class="actions">' + (pdfOk() ? '<button class="btn line" data-exp-pdf style="margin-right:auto">' + PR.t("导出带划线的 PDF") + "</button>" : "") +
       '<button class="btn" data-exp-close>' + PR.t("取消") + '</button><button class="btn primary" data-exp-go>' + PR.t("导出") + "</button></div>";
     dlg.classList.add("open");
@@ -56,19 +58,24 @@
         PR.toast(PR.t("请先到 设置 → 阅读 设置 Obsidian 文件夹"), null, 7000);
         return;
       }
+      const box = PR.$("[data-obs-ai]"), ai = !!(box && box.checked === true);
+      if (box && PR.ls) PR.ls.set("easyread-obs-ai", ai);
       if (PR.store.pending) await PR.flush();  // 刚划的线可能还在待存队列里，先写进文献库
       obsStatus(PR.t("模型思考中，约需一两分钟"), true);
       PR.toast(PR.t("模型思考中，约需一两分钟"), null, 6000);
-      const job = await PR.api("/api/p/" + PR.pid + "/obsidian-note", { method: "POST", body: {} });
+      const job = await PR.api("/api/p/" + PR.pid + "/obsidian-note", { method: "POST", body: ai ? { ai_images: true } : {} });
       const deadline = Date.now() + 25 * 60 * 1000;
       while (Date.now() < deadline) {
         await new Promise((res) => setTimeout(res, PR.obsidianPollMs || 1500));
         let j = null;
         try { j = ((await PR.api("/api/jobs?pid=" + encodeURIComponent(PR.pid))).jobs || []).find((x) => x.kind === "obsidian" && x.id === job.id); } catch (err) { j = null; }  // 偶发读取失败就下一轮再试
         if (!j) continue;
+        if (j.state === "running" && j.message) obsStatus(j.message, true);  // 生图时显示进度（第几张）
         if (j.state === "done") {
           let msg = PR.t("已写入：{path}", { path: PR.esc(j.path || "") });
           if (j.skipped > 0) msg += "<br>" + PR.t("有 {n} 张图没能截取，已略过", { n: j.skipped });
+          if (j.ai_images > 0) msg += "<br>" + PR.t("已生成 {n} 张 AI 示意图", { n: j.ai_images });
+          if (j.ai_skipped > 0) msg += "<br>" + PR.t("有 {n} 张 AI 示意图没能生成：{msg}", { n: j.ai_skipped, msg: PR.esc(j.ai_error || "") });
           PR.toast(msg, null, 12000);
           return;
         }

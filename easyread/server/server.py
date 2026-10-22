@@ -462,7 +462,8 @@ class Handler(BaseHTTPRequestHandler):
             if action == "obsidian-note":
                 if not config.load().get("obsidian_vault"):
                     raise ValueError(tr("尚未设置 Obsidian 文件夹"))
-                return self._json(200, app.jobs.submit_small("obsidian", ws.id, model=body.get("model")))
+                return self._json(200, app.jobs.submit_small(
+                    "obsidian", ws.id, model=body.get("model"), ai_images=body.get("ai_images") is True))
             if action == "chat" and len(parts) == 5:
                 return self._chat(ws, body)
             if parts[4] == "notehelp":
