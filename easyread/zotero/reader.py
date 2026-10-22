@@ -12,6 +12,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .. import path_guard
 from ..app.i18n import tr
 from . import locate
 
@@ -105,6 +106,11 @@ def _pdf_path(data_dir: Path, base: str, att_key: str, link_mode: int, path: str
 
 def read(data_dir: str | Path, base: str = "") -> Snapshot:
     data_dir = locate.resolve(str(data_dir))
+    # 資料夾與資料庫必須是自己的、別人不可寫、不在暫存／共用目錄（否則拿到令牌的人能塞一個假資料庫，
+    # 用“链接的附件”指到你讀得到的任意 PDF，匯入後再用 GET 讀走）
+    if not path_guard.trusted_path(str(data_dir.resolve()), leaf_mine=True) or not all(
+            path_guard.mine_file(data_dir / n) for n in (locate.DB, locate.DB + ".bak") if (data_dir / n).exists()):
+        raise ValueError(tr("这个 Zotero 数据文件夹不属于你、其他用户能写入，或位于临时/共享文件夹，不能读取：{path}", path=str(data_dir)))
     with tempfile.TemporaryDirectory(prefix="easyread-zotero-") as tmp:
         db, backup = _copy(data_dir, Path(tmp))
         con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
@@ -182,6 +188,8 @@ def _read(con: sqlite3.Connection, data_dir: Path, base: str, backup: bool) -> S
                   cats=sorted(set(in_col.get(iid, []))), tags=sorted(set(tags.get(iid, []))))
         if not att:
             e.missing = tr("没有 PDF 附件")
+        elif att[0] and att[0].is_file() and not path_guard.mine_file(att[0]):
+            e.missing = tr("文件不属于你或位于临时/共享文件夹，已跳过：{path}", path=str(att[0]))
         elif att[0] and att[0].is_file():
             e.pdf = att[0]
         else:

@@ -144,7 +144,7 @@ cookie 也要靠某個 GET 回應發下來，本機程式一樣拿得到，效�
 上游新增 CodeBuddy、Grok Build、Antigravity（`agy`）、Cursor 四個 CLI 引擎，`cli_guard` 原本只檢查 claude / codex。重現：`save_config({"codebuddy": {"command": "/bin/sh", ...}})` 被接受，之後翻譯或問 AI 就會執行 `/bin/sh`。
 
 修法（`easyread/cli_guard.py`、`engines/agent_cli.py`、`engines/codebuddy_cli.py`）：
-- `command` 只接受該 CLI 的命令名或它的絕對路徑（檔案存在且可執行）：codebuddy → `codebuddy`；grok → `grok`；agy → `agy`；cursor → `agent` / `cursor-agent`（與上游 `agent_cli.SPECS` 一致，測試會對照）。另外可附 `.cmd`、`.exe`。空字串表示按預設名找（設定頁會送空字串）。
+- `command` 只接受該 CLI 的命令名，或它的絕對路徑（檔案存在、可執行，而且要通過第 5 節的可信路徑檢查；只看檔名是不夠的，見第 5 節）：codebuddy → `codebuddy`；grok → `grok`；agy → `agy`；cursor → `agent` / `cursor-agent`（與上游 `agent_cli.SPECS` 一致，測試會對照）。另外可附 `.cmd`、`.exe`。空字串表示按預設名找（設定頁會送空字串）。
 - `extra_args`：不確定這些 CLI 哪些參數無害（可能有放開權限、MCP 之類），**保守起見只能是空陣列**。
 - 區段只接受 `command`、`model`、`reasoning_effort`、`extra_args`、`timeout`；`model`、`reasoning_effort` 套用和 claude / codex 相同的格式檢查。「問 AI」名單裡這些引擎的卡片也檢查 `model`。
 - **起子程序前再檢查一次**：`agent_cli.path`、`codebuddy_cli.path` 遇到不合格的 command 就當作沒找到；`run()` 先呼叫 `engines.guard`。
@@ -170,6 +170,59 @@ cookie 也要靠某個 GET 回應發下來，本機程式一樣拿得到，效�
   - 以下 9 個 GET 都不含令牌：`/api/library`、`/api/config`、`/api/prefs`、`/api/jobs`、`/api/trash`、`/api/log`、`/api/version`、`/api/library/location`、`/api/migrate/status`。
   - 照前端 `collect()` 形狀存一次設定（`batch_pages=3`）回 200。
   - 四個新引擎設 `command=/bin/sh` 都回 400；不帶令牌回 403。
+
+## 5. 第三輪（整合分支審查後）
+
+### 5.1 可執行檔路徑只看檔名（嚴重）
+**重現**：`<暫存目錄>/attacker/bin/claude` 檔名正確、可執行。拿到令牌的人可以：
+1. `POST /api/config {"claude": {"command": 那個路徑}}`，會被接受。
+2. 再呼叫 `/api/config/test`，服務就以你的身分執行它。
+
+六個 CLI 引擎都受影響。
+
+**修法**（`easyread/path_guard.py::trusted_path`，`cli_guard.check_command` 與 `cli_guard.which_trusted` 使用）：
+- 仿 sshd StrictModes 檢查兩條路徑：原路徑，以及追完符號連結後的真實路徑。
+  - 檔案本身與它到 `/` 的每一層目錄，都必須屬於自己或 root，而且其他人不可寫。
+  - 群組可寫只在「該群組只有自己與 root」時接受。單人 Mac 上 Homebrew 的 `/opt/homebrew/bin` 是 admin 群組可寫，這樣才不會被誤擋。
+- 不能位於暫存或共用目錄：`/tmp`、`/private/tmp`、`/var/tmp`、`/var/folders`、`$TMPDIR`、`/Users/Shared`、`~/Library/Containers`、`~/Library/Group Containers`。
+- 裸命令名照常可用。但起子程序前，`shutil.which` 找到的實際檔案也要通過同一個檢查（`engines._cli_path`、`agent_cli.path`、`codebuddy_cli.path`），所以 PATH 被塞進可寫目錄也不會執行。
+- 存檔時檢查一次，起子程序前再檢查一次，六個引擎都套用。
+- 實測：本機的 `~/.local/bin/claude`、`~/.local/bin/codex`（符號連結到家目錄下）與 `/opt/homebrew/bin/*` 都仍可信。
+
+### 5.2 成批匯入能讀走任意 PDF（重要）
+**重現**：
+- `/api/migrate/start` 可以指定任意資料夾。
+- Zotero 的「連結附件」（linkMode=2，絕對路徑）可以指到任意你讀得到的 PDF。
+- 匯入後（`link:true` 甚至不複製檔案），再用不需令牌的 `GET /p/<id>/source.pdf` 讀走。
+
+**修法**：
+- 資料夾來源（`bulk/folder.py`）：必須屬於自己，整條路徑通過 `trusted_path`，不在暫存或共用目錄。資料夾內每個 PDF 的真實路徑也必須屬於自己、別人不可寫、不在禁區，否則跳過並列出原因（擋住指到別處的符號連結）。
+- Zotero（`zotero/reader.py`）：資料夾本身與 `zotero.sqlite`（含 `.bak`）都必須屬於自己、別人不可寫，否則拒絕讀取。每個附件（含連結附件）也做同樣的檔案檢查，不合格就跳過。
+- 連結匯入（`link:true`，`bulk/runner.py`）：只接受家目錄底下的檔案。
+- 自己的資料夾、自己的 Zotero 照常可用。
+
+### 5.3 `/api/library/cleanup`（次要）
+- 先做 `_check_owner(root)`：別人的或別人可寫的目錄不清理。
+- 刪除改用 `_remove_nofollow`：從庫根目錄一層層以 `O_NOFOLLOW` 開目錄，再用 `dir_fd` 刪除。檢查和刪除之間有人把中間某層換成符號連結，也刪不到庫外面（TOCTOU）。`shutil.rmtree(dir_fd=…)` 本身也不跟隨符號連結。
+
+### 5.4 測試
+- `TrustedExecutableTest`：
+  - 六個引擎放在暫存目錄的「正確檔名」執行檔都被拒絕。
+  - 繞過存檔寫進設定，或塞進 PATH 的檔案，起子程序前都不會被找到。
+  - 目錄權限 777、757，檔案權限 777，連到別人可寫目錄的符號連結，屬於別的帳號：都被拒絕。
+  - 本機真實安裝的 claude 仍可信。
+- `BulkImportSourceTest`：
+  - 暫存目錄當資料夾來源被拒絕；別人可寫或別人的資料夾被拒絕。
+  - 指到禁區的符號連結 PDF 被跳過。
+  - Zotero 資料夾在暫存目錄被拒絕；連結附件指到禁區被跳過；資料庫權限 666 被拒絕。
+  - 連結匯入暫存目錄的檔案被跳過。
+- `CleanupTest`：
+  - 別人的或別人可寫的根目錄不清理。
+  - 模擬「檢查後把中間層換成符號連結」，庫外的檔案完好。
+- HTTP：`/api/config` 帶攻擊者執行檔回 400；`/api/migrate/scan`、`/api/migrate/start`（`link:true`）指向暫存目錄回 400。
+- 上游測試的調整：測試資料都放在系統暫存目錄，所以 `tests/bulk/*`、`tests/zotero/test_reader.py`、`tests/test_cli_guard.py` 在模組層級把「暫存目錄禁區」放寬（擁有者與權限檢查照做），禁區本身另在 `test_security_hardening.py` 測試。`tests/engines/*` 用假的 Windows 路徑測分派邏輯，那幾個測試把 `trusted_path` 換成 True。
+- 變異檢查 11 項全部被測試抓到：拿掉 trusted_path、which 檢查、暫存禁區、擁有者與可寫檢查、資料夾來源檢查、資料夾內檔案檢查、Zotero 附件檢查、Zotero 資料夾檢查、家目錄限制、cleanup 擁有者檢查、nofollow 刪除，各自都有測試失敗。
+- 數字：pytest **859 passed, 1 skipped**；node **228 / 228**。
 
 ## 驗證紀錄
 
@@ -229,4 +282,11 @@ $ curl -s $U/api/library | grep -c '"token"'          → 0
 3. **base_url**：「先埋卡片、後填 Key」第二輪已擋（送出時檢查）。剩下的是：拿到令牌的人仍能**埋**沒 Key 的卡片、或把翻譯地址改成 evil（只要那家還沒存 Key），使用者之後若**就在那張卡片 / 那個地址上**輸入 Key，就等於自己授權了它。前提是使用者沒注意到地址被改。另外沒 Key 的服務（例如自架、免 Key）送出的論文內容本來就不受 Key 綁定保護。
 4. **文獻庫搬家**：同 uid 的沙箱程式可指定自己容器內的目錄（見第 2 節）；Windows 未檢查，且 Windows 上 UNC 路徑（`\\host\share`）在 `inspect` 時就會連線，可能洩漏 NTLM 雜湊，未處理；`/api/library/cleanup` 這次沒有深入審查。
 5. 前端沒有在真實瀏覽器實測（見上）。
-6. 上游 v1.4.4 新增的 `/api/migrate/*`（從 Zotero 搬資料，會讀使用者指定的資料夾）與 `/api/zotero/detect` 這次沒有審查。
+6. `/api/migrate/scan` 仍可用來**探測路徑是否存在**：存在與否、是不是 Zotero 資料夾，會有不同的錯誤訊息，但不會讀出內容。
+7. `/api/zotero/detect` 是不需令牌的 GET，會回傳本機 Zotero 資料夾的路徑（洩漏使用者名稱與目錄結構）。
+8. `/api/import-url` 會替呼叫者下載網址，屬於有限的 SSRF：能打到區網或本機的 HTTP 服務，只是回應要是 PDF 才會被匯入。
+9. GET 的副作用（不需令牌，可被跨站 `<img src>` 觸發）：
+   - `/api/library/location` 會在候選資料夾寫入探測檔。
+   - `/p/{id}/pages/...?w=` 會產生縮圖。
+   - `/api/engines?fresh=1` 會執行各 CLI 的 `--version`（現在只會執行可信路徑上的檔案）。
+   - 另見第 2 點。

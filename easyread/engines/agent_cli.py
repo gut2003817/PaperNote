@@ -36,14 +36,14 @@ ONLY_READ = "\n\n（只用读文件的工具看上面提到的图片或文件；
 def path(engine: str, c: dict) -> str | None:
     """设置里填了命令就只认它；没填按默认名找（Cursor 新版叫 agent，旧版叫 cursor-agent）。
     Grok Build 也会装一个 agent（就是 grok 本身，和 grok.exe 放在一起）：旁边有 grok 的 agent 不算 Cursor。"""
+    from .. import cli_guard
     if c.get("command"):
-        from .. import cli_guard
         try:  # 不是“看起来就是该 CLI”的命令就当没找到（和 claude / codex 一样，见 cli_guard）
             cli_guard.check_command(engine, c["command"])
         except ValueError:
             return None
-        return shutil.which(c["command"])
-    for p in map(shutil.which, SPECS[engine]["commands"]):
+        return cli_guard.which_trusted(c["command"])
+    for p in map(cli_guard.which_trusted, SPECS[engine]["commands"]):
         if p and not (engine == "cursor" and _grok_agent(p)):
             return p
     return None

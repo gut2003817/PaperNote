@@ -101,7 +101,7 @@ def _cli_path(name: str, c: dict) -> str | None:
     except ValueError as e:
         log.warning("%s", e)
         return None
-    return shutil.which(cmd)
+    return cli_guard.which_trusted(cmd)  # which 找到的實際檔案也要可信（見 cli_guard.trusted_path）
 
 
 def claude_path(c: dict) -> str | None:

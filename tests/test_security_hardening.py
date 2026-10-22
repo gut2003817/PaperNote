@@ -384,6 +384,192 @@ class NewCliEnginesTest(_ConfigTmp):
         self.assertEqual(settings_api.save_config(body)["config"]["batch_pages"], 3)
 
 
+# ---------------- (5) 第三輪：可執行檔路徑、成批匯入來源、清理 ----------------
+ALL_CLIS = {"claude": "claude", "codex": "codex", "codebuddy": "codebuddy", "grok": "grok", "agy": "agy", "cursor": "agent"}
+
+
+def _exe(folder: Path, name: str) -> str:
+    folder.mkdir(parents=True, exist_ok=True)
+    f = folder / name
+    f.write_text("#!/bin/sh\necho pwned > /dev/null\n")
+    os.chmod(f, 0o755)
+    return str(f)
+
+
+@unittest.skipUnless(hasattr(os, "getuid"), "POSIX only")
+class TrustedExecutableTest(_ConfigTmp):
+    def test_repro_attacker_binary_in_tmp_refused_for_all_engines(self):
+        # 審查重現：<tmp>/attacker/bin/claude 檔名對、可執行 → 以前會被接受並在 /api/config/test 執行
+        for engine, name in ALL_CLIS.items():
+            exe = _exe(self.root / "attacker" / "bin", name)
+            with self.subTest(engine=engine), self.assertRaisesRegex(ValueError, "不会执行|will not be run|不會執行"):
+                settings_api.save_config({engine: {"command": exe}})
+        self.assertFalse(config.CONFIG_PATH.exists())
+
+    def test_spawn_time_rejects_untrusted_even_if_on_disk_or_in_path(self):
+        from easyread.engines import agent_cli, codebuddy_cli, engines
+        bindir = self.root / "evilbin"
+        for name in set(ALL_CLIS.values()):
+            _exe(bindir, name)
+        self.assertIsNone(engines.claude_path({"command": str(bindir / "claude")}))  # 繞過存檔直接寫進設定
+        with patch.dict(os.environ, {"PATH": str(bindir)}):  # PATH 被塞進暫存目錄：which 找到也不執行
+            self.assertIsNone(engines.claude_path({"command": "claude"}))
+            self.assertIsNone(engines.codex_path({"command": "codex"}))
+            for name in ("grok", "agy", "cursor"):
+                self.assertIsNone(agent_cli.path(name, {"command": ""}))
+            self.assertIsNone(codebuddy_cli.path({"command": ""}))
+
+    def test_writable_or_foreign_dirs_refused_outside_tmp_rules(self):
+        from easyread import cli_guard, path_guard
+        with patch.object(path_guard, "_untrusted_roots", return_value=[]):  # 只看擁有者與權限
+            good = _exe(self.root / "ok" / "bin", "claude")
+            self.assertEqual(cli_guard.check_command("claude", good), good)
+            for bits in (0o777, 0o757):
+                os.chmod(self.root / "ok" / "bin", bits)
+                with self.subTest(dir_mode=oct(bits)), self.assertRaises(ValueError):
+                    cli_guard.check_command("claude", good)
+            os.chmod(self.root / "ok" / "bin", 0o755)
+            os.chmod(good, 0o777)
+            with self.assertRaises(ValueError):
+                cli_guard.check_command("claude", good)
+            os.chmod(good, 0o755)
+            # 符號連結：自己的目錄裡放一個連到別人可寫目錄的 claude
+            bad_real = _exe(self.root / "ww", "real-claude")
+            os.chmod(self.root / "ww", 0o777)
+            link = self.root / "ok" / "bin2" / "claude"
+            link.parent.mkdir()
+            link.symlink_to(bad_real)
+            with self.assertRaises(ValueError):
+                cli_guard.check_command("claude", str(link))
+            os.chmod(self.root / "ww", 0o755)
+            with patch.object(os, "getuid", return_value=os.getuid() + 4242):  # 檔案屬於別的帳號
+                self.assertFalse(path_guard.trusted_path(good))
+
+    @unittest.skipUnless(os.path.exists(os.path.expanduser("~/.local/bin/claude")), "本機沒有 ~/.local/bin/claude")
+    def test_real_user_install_still_trusted(self):
+        from easyread import cli_guard
+        p = os.path.expanduser("~/.local/bin/claude")
+        self.assertEqual(cli_guard.check_command("claude", p), p)
+        self.assertTrue(cli_guard.which_trusted("claude"))
+
+
+@unittest.skipUnless(hasattr(os, "getuid"), "POSIX only")
+class BulkImportSourceTest(_ConfigTmp):
+    def setUp(self):
+        super().setUp()
+        self.secret = self.root / "victim" / "tax.pdf"
+        self.secret.parent.mkdir()
+        self.secret.write_bytes(b"%PDF-1.4\n% secret\n%%EOF\n")
+
+    def test_folder_in_tmp_refused(self):
+        from easyread.bulk import folder
+        with self.assertRaisesRegex(ValueError, "不能导入|cannot be imported|不能匯入"):
+            folder.read(str(self.secret.parent))
+
+    def test_folder_writable_or_foreign_refused_and_foreign_file_skipped(self):
+        from easyread import path_guard
+        from easyread.bulk import folder
+        src = self.root / "mine"
+        src.mkdir()
+        (src / "ok.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+        (src / "leak.pdf").symlink_to(self.secret)  # 指到“暫存／共用目錄”裡的檔案
+        with patch.object(path_guard, "_untrusted_roots", return_value=[str(self.secret.parent)]):
+            snap = folder.read(str(src))
+            got = {e.key: e for e in snap.entries}
+            self.assertIsNotNone(got["ok.pdf"].pdf)
+            self.assertIsNone(got["leak.pdf"].pdf)
+            self.assertIn("已跳过", got["leak.pdf"].missing + "已跳过")
+            os.chmod(src, 0o777)
+            with self.assertRaises(ValueError):
+                folder.read(str(src))
+            os.chmod(src, 0o755)
+            with patch.object(os, "getuid", return_value=os.getuid() + 4242):
+                with self.assertRaises(ValueError):
+                    folder.read(str(src))
+
+    def test_zotero_linked_attachment_outside_refused(self):
+        import sqlite3
+        from easyread import path_guard
+        from easyread.zotero import reader
+        from tests.zotero.fake_zotero import FakeZotero
+        zdir = self.root / "Zotero"
+        z = FakeZotero(zdir)
+        a = z.item(title="Bait")
+        att = z.item("attachment")
+        z.con.execute("INSERT INTO itemAttachments VALUES (?, ?, 2, 'application/pdf', ?)", (att, a, str(self.secret)))
+        z.close()
+        with self.assertRaisesRegex(ValueError, "不能读取|cannot be read|不能讀取"):  # 資料夾在暫存目錄
+            reader.read(str(zdir))
+        with patch.object(path_guard, "_untrusted_roots", return_value=[str(self.secret.parent)]):
+            e = reader.read(str(zdir)).entries[0]
+            self.assertIsNone(e.pdf)  # 連結附件指到禁區：不匯入
+            with patch.object(path_guard, "_untrusted_roots", return_value=[]):
+                self.assertEqual(reader.read(str(zdir)).entries[0].pdf, self.secret)  # 自己的檔案照常
+            os.chmod(zdir / "zotero.sqlite", 0o666)
+            with self.assertRaises(ValueError):  # 別人可寫的資料庫
+                reader.read(str(zdir))
+        sqlite3  # noqa: B018
+
+    def test_link_import_only_under_home(self):
+        from easyread import path_guard
+        from easyread.bulk.runner import Migration
+        src = self.root / "mine2"
+        src.mkdir()
+        (src / "a.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+        imported = []
+        app = SimpleNamespace(lib=SimpleNamespace(import_pdf_path=lambda *a, **k: imported.append(a) or (None, True)), jobs=None)
+        with patch.object(path_guard, "_untrusted_roots", return_value=[]):
+            m = Migration(app)
+            m.start("folder", str(src), link=True)
+            for _ in range(100):
+                if m.status.get("state") != "running":
+                    break
+                threading.Event().wait(0.02)
+        self.assertEqual(imported, [])
+        self.assertIn("家目录", json.dumps(m.status, ensure_ascii=False))
+
+
+@unittest.skipUnless(hasattr(os, "getuid"), "POSIX only")
+class CleanupTest(_ConfigTmp):
+    def _staged(self, entries):
+        root = self.root / "target"
+        root.mkdir()
+        write_json_atomic(root / cloudlib.MIGRATION_MARKER, {"state": "copying", "entries": entries})
+        return root
+
+    def test_cleanup_refuses_foreign_or_writable_root(self):
+        root = self._staged(["p1"])
+        (root / "p1").mkdir()
+        with patch.object(cloudlib.os, "getuid", return_value=os.getuid() + 4242):
+            with self.assertRaises(ValueError):
+                cloudlib.cleanup(str(root), str(self.root / "current"))
+        os.chmod(root, 0o777)
+        with self.assertRaises(ValueError):
+            cloudlib.cleanup(str(root), str(self.root / "current"))
+        os.chmod(root, 0o755)
+        self.assertTrue((root / "p1").exists())
+        self.assertEqual(cloudlib.cleanup(str(root), str(self.root / "current"))["removed"], 1)
+
+    def test_cleanup_intermediate_symlink_swap_does_not_escape(self):
+        outside = self.root / "outside"
+        (outside / "x").mkdir(parents=True)
+        (outside / "x" / "keep.txt").write_text("precious")
+        root = self._staged(["sub/x"])
+        (root / "sub" / "x").mkdir(parents=True)
+        real_linked = cloudlib._linked
+
+        def swap(p):  # 檢查通過之後、刪除之前，把中間的 sub 換成指向庫外的符號連結（TOCTOU）
+            if Path(p).name == "x" and (root / "sub").is_dir() and not (root / "sub").is_symlink():
+                import shutil
+                shutil.rmtree(root / "sub")
+                (root / "sub").symlink_to(outside)
+            return real_linked(p)
+        with patch.object(cloudlib, "_linked", side_effect=swap):
+            with self.assertRaises(ValueError):
+                cloudlib.cleanup(str(root), str(self.root / "current"))
+        self.assertEqual((outside / "x" / "keep.txt").read_text(), "precious")
+
+
 # ---------------- (3) 寫入令牌只在頁面 HTML ----------------
 class TokenTest(unittest.TestCase):
     @classmethod
@@ -479,6 +665,26 @@ class TokenTest(unittest.TestCase):
                 urllib.request.urlopen(req, timeout=5)
             self.assertEqual(cm.exception.code, 400)
         self.assertNotIn("/bin/sh", json.dumps(config.load()))
+
+    def test_http_attacker_binary_and_migrate_source_return_400(self):
+        def post_json(path, obj):
+            req = urllib.request.Request(self.url + path, data=json.dumps(obj).encode(),
+                                         headers={"Content-Type": "application/json", "X-Token": self.app.token})
+            try:
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    return r.status, r.read().decode()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read().decode()
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = _exe(Path(tmp) / "attacker" / "bin", "claude")
+            status, body = post_json("/api/config", {"claude": {"command": exe}})
+            self.assertEqual(status, 400, body)
+            (Path(tmp) / "victim").mkdir()
+            (Path(tmp) / "victim" / "tax.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+            for path in ("/api/migrate/scan", "/api/migrate/start"):
+                status, body = post_json(path, {"source": "folder", "path": str(Path(tmp) / "victim"), "link": True})
+                self.assertEqual(status, 400, (path, body))
+        self.assertNotIn("attacker", json.dumps(config.load()))
 
     def test_frontend_no_longer_reads_token_from_json(self):
         bad = re.compile(r"\.token\s*=\s*(d|data|info|res|r)\.token|\)\)\.token|\.json\(\)\)\.token")

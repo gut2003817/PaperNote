@@ -31,8 +31,14 @@ class Base(unittest.TestCase):
         self.cfg.start()
         self.env = patch.dict(os.environ, {"EASYREAD_LIBRARY": str(self.dir / "lib")})
         self.env.start()
+        # 這裡的假執行檔放在系統暫存目錄；資安加固後暫存目錄本身是禁區（tests/test_security_hardening.py 另測），
+        # 這組測試只看命令名與路徑格式，所以把暫存目錄從禁區拿掉（擁有者與可寫檢查照做）。
+        from easyread import path_guard
+        self.roots = patch.object(path_guard, "_untrusted_roots", return_value=[])
+        self.roots.start()
 
     def tearDown(self):
+        self.roots.stop()
         self.env.stop()
         self.cfg.stop()
         self.tmp.cleanup()
@@ -185,7 +191,8 @@ class ExtraArgsTest(Base):
 
     def test_runtime_guard_blocks_before_popen(self):
         c = {"command": "claude", "extra_args": ["--settings", "{}"]}
-        with patch.object(engines, "_popen") as popen, patch.object(engines.shutil, "which", return_value="/x/claude"):
+        with patch.object(engines, "_popen") as popen, patch.object(engines.shutil, "which", return_value="/x/claude"), \
+                patch.object(cli_guard, "trusted_path", return_value=True):
             with self.assertRaises(engines.EngineError):
                 engines.run_claude(c, "hi", self.dir)
             with self.assertRaises(engines.EngineError):
@@ -196,7 +203,8 @@ class ExtraArgsTest(Base):
         """合法配置照常走到 Popen（这里拦掉 Popen，只看有没有被防呆挡住）。"""
         class Stop(Exception):
             pass
-        with patch.object(engines, "_popen", side_effect=Stop) as popen, patch.object(engines.shutil, "which", return_value="/x/claude"):
+        with patch.object(engines, "_popen", side_effect=Stop) as popen, patch.object(engines.shutil, "which", return_value="/x/claude"), \
+                patch.object(cli_guard, "trusted_path", return_value=True):
             with self.assertRaises(Stop):
                 engines.run_claude({**config.DEFAULTS["claude"], "model": "sonnet", "extra_args": ["--max-budget-usd", "2"]}, "hi", self.dir)
             argv = popen.call_args[0][0]

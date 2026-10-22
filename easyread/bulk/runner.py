@@ -9,6 +9,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+from .. import path_guard
 from ..app import prefs
 from ..app.i18n import tr
 from ..app.log import log
@@ -36,9 +37,9 @@ def _title(e: Entry) -> str:
 def read(source: str, path: str, base: str = "") -> tuple[Snapshot, str]:
     """(条目, 规范后的路径)。source：zotero / folder。"""
     if source == "zotero":
-        return reader.read(path, base), str(locate.resolve(path))
+        return reader.read(path, base), str(locate.resolve(path))  # reader.read 會檢查資料夾與資料庫的擁有者
     if source == "folder":
-        return folder.read(path), str(Path(path).expanduser().resolve())
+        return folder.read(path), str(Path(path).expanduser().resolve())  # folder.read 會檢查擁有者
     raise ValueError(tr("不认识的来源：{source}", source=source))
 
 
@@ -106,6 +107,9 @@ class Migration:
                     if link:
                         if not e.pdf:
                             self._note("skipped", e, e.missing)
+                            continue
+                        if not path_guard.under_home(e.pdf):  # 連結匯入不複製檔案：只接受家目錄底下的檔案
+                            self._note("skipped", e, tr("链接导入只接受你家目录下的文件：{path}", path=str(e.pdf)))
                             continue
                         ws, fresh = lib.import_pdf_path(e.pdf, e.meta, link=True)
                     else:

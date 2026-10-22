@@ -374,12 +374,38 @@ def _drop_ready_marker(root: Path):
         log.warning("没删掉 ready 标记 %s", marker, exc_info=True)
 
 
+_NOFOLLOW = hasattr(os, "O_NOFOLLOW") and os.open in os.supports_dir_fd and shutil.rmtree.avoids_symlink_attacks
+
+
+def _remove_nofollow(root: Path, rel: Path) -> None:
+    """從 root 一層層用 O_NOFOLLOW 開目錄到 rel 的上一層，再以 dir_fd 刪除：檢查和刪除之間有人把
+    中間某層換成符號連結，也不會刪到庫外面（避免 TOCTOU）。任何一層是符號連結就丟 OSError。"""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open(root, flags)
+    try:
+        for part in rel.parts[:-1]:
+            nxt = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        name = rel.parts[-1]
+        st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        if stat.S_ISLNK(st.st_mode):
+            raise OSError("link")
+        if stat.S_ISDIR(st.st_mode):
+            shutil.rmtree(name, dir_fd=fd)  # rmtree 在 dir_fd 下同樣不跟隨符號連結
+        else:
+            os.unlink(name, dir_fd=fd)
+    finally:
+        os.close(fd)
+
+
 def cleanup(path: str | Path, current: str | Path) -> dict:
     """清理本机一次没完成的迁移：只删标记里记录的、本次要新建的项和临时目录，目标原有的论文不动。"""
     root = Path(path).resolve()
     marker = root / MIGRATION_MARKER
     if root == Path(current).resolve():
         raise ValueError(tr("不能清理正在使用的文献库"))
+    _check_owner(root)  # 別人的、別人可寫的目錄不清理（否則可借標記檔刪掉你的檔案）
     if not marker.exists() or _linked(marker):
         raise ValueError(tr("这里没有需要清理的迁移"))
     data = read_json(marker, {}) or {}
@@ -400,7 +426,7 @@ def cleanup(path: str | Path, current: str | Path) -> dict:
         try:
             if _linked(target):
                 raise OSError("link")
-            shutil.rmtree(target) if target.is_dir() else target.unlink()
+            _remove_nofollow(root, rel) if _NOFOLLOW else (shutil.rmtree(target) if target.is_dir() else target.unlink())
             removed += 1
         except OSError:
             failed.append(str(target))

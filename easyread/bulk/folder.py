@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from .. import path_guard
 from ..app.i18n import tr
 from ..zotero.reader import Entry, Snapshot
 
@@ -18,6 +19,8 @@ def read(path: str) -> Snapshot:
     if not root.is_dir():
         raise ValueError(tr("找不到这个文件夹：{path}", path=str(root)))
     root = root.resolve()
+    if not path_guard.trusted_path(str(root), leaf_mine=True):  # 別人的、別人可寫的、暫存／共用資料夾不匯入
+        raise ValueError(tr("这个文件夹不属于你、其他用户能写入，或位于临时/共享文件夹，不能导入：{path}", path=str(root)))
     top = root.name or str(root).rstrip("\\/:")  # 选的是盘符根目录时没有名字
     entries: list[Entry] = []
     cats: list[str] = []
@@ -35,5 +38,10 @@ def read(path: str) -> Snapshot:
         for f in pdfs:
             if len(entries) >= MAX_FILES:
                 raise ValueError(tr("这个文件夹里的 PDF 超过 {n} 个，请分几次导入，每次选一个子文件夹", n=MAX_FILES))
-            entries.append(Entry(key=str(Path(d, f).relative_to(root)), meta={}, cats=[cat], pdf=Path(d) / f))
+            pdf = Path(d) / f
+            if not path_guard.mine_file(pdf):  # 例如指到別處的符號連結、別人的檔案：不匯入，列在“没有 PDF”裡
+                entries.append(Entry(key=str(Path(d, f).relative_to(root)), meta={"title_en": pdf.stem}, cats=[cat],
+                                     missing=tr("文件不属于你或位于临时/共享文件夹，已跳过：{path}", path=str(pdf))))
+                continue
+            entries.append(Entry(key=str(Path(d, f).relative_to(root)), meta={}, cats=[cat], pdf=pdf))
     return Snapshot(entries=entries, collections=cats)

@@ -116,7 +116,7 @@ class AgentCliTest(unittest.TestCase):
     # ---------- 找命令、接进引擎 ----------
     def test_path_prefers_configured_command_then_defaults(self):
         found = {"cursor-agent": "C:/x/cursor-agent.cmd"}
-        with mock.patch("shutil.which", side_effect=found.get):
+        with mock.patch("shutil.which", side_effect=found.get), mock.patch("easyread.cli_guard.trusted_path", return_value=True):  # 假路徑：只測分派
             self.assertEqual(agent_cli.path("cursor", {"command": ""}), "C:/x/cursor-agent.cmd")
             self.assertIsNone(agent_cli.path("cursor", {"command": "agent"}))
 
@@ -126,11 +126,11 @@ class AgentCliTest(unittest.TestCase):
         for n in ("grok.exe", "agent.exe"):
             (grok_bin / n).write_bytes(b"")
         found = {"agent": str(grok_bin / "agent.exe")}
-        with mock.patch("shutil.which", side_effect=found.get):
+        with mock.patch("shutil.which", side_effect=found.get), mock.patch("easyread.cli_guard.trusted_path", return_value=True):  # 假路徑：只測分派
             self.assertIsNone(agent_cli.path("cursor", {"command": ""}))
             self.assertEqual(agent_cli.path("cursor", {"command": "agent"}), str(grok_bin / "agent.exe"))  # 自己填的照用
         found["cursor-agent"] = "C:/cursor/cursor-agent.cmd"
-        with mock.patch("shutil.which", side_effect=found.get):
+        with mock.patch("shutil.which", side_effect=found.get), mock.patch("easyread.cli_guard.trusted_path", return_value=True):  # 假路徑：只測分派
             self.assertEqual(agent_cli.path("cursor", {"command": ""}), "C:/cursor/cursor-agent.cmd")
 
     def test_engines_dispatch_and_image_mode(self):

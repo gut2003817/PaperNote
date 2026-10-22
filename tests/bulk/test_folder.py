@@ -8,6 +8,24 @@ from easyread.library.library import Library
 from tests.zotero.fake_zotero import pdf_bytes
 
 
+
+# 資安加固（path_guard）把系統暫存目錄當成禁區、連結匯入只收家目錄下的檔案；這裡的測試資料都在暫存目錄，
+# 測的是匯入邏輯本身，所以整個模組放寬這兩條（禁區與擁有者檢查另在 tests/test_security_hardening.py 測）。
+_PG = []
+
+
+def setUpModule():
+    from unittest import mock as _m
+    from easyread import path_guard as _pg
+    _PG.extend([_m.patch.object(_pg, "_untrusted_roots", return_value=[]), _m.patch.object(_pg, "under_home", return_value=True)])
+    for x in _PG:
+        x.start()
+
+
+def tearDownModule():
+    for x in _PG:
+        x.stop()
+
 class FolderTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

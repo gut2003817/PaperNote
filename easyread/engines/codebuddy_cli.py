@@ -20,13 +20,13 @@ from . import netcheck
 
 
 def path(c: dict) -> str | None:
+    from .. import cli_guard
     if c.get("command"):
-        from .. import cli_guard
         try:  # 不是“看起来就是 codebuddy”的命令就当没找到（见 cli_guard）
             cli_guard.check_command("codebuddy", c["command"])
         except ValueError:
             return None
-    return shutil.which(c.get("command") or "codebuddy")
+    return cli_guard.which_trusted(c.get("command") or "codebuddy")  # which 找到的實際檔案也要可信
 
 
 def build_args(c: dict) -> list[str]:

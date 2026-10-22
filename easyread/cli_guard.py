@@ -44,10 +44,14 @@ def _allowed_names(name: str) -> str:
     return "/".join(stem + e for stem in NAMES[name] for e in _EXTS)
 
 
+from .path_guard import trusted_path  # noqa: E402  可執行檔是否可信（擁有者、可寫、暫存目錄），見 path_guard.py
+
+
 def check_command(name: str, value, field: str | None = None) -> str:
-    """name：claude 或 codex。合格返回原值，否则抛 ValueError。
-    合格 = 裸命令名（claude / claude.cmd / claude.exe），或绝对路径：文件名是这几个之一、文件存在且可执行。
-    符号链接不追到目标（官方安装器就是把 claude 链到版本目录下的文件），只看路径本身的文件名。"""
+    """name：NAMES 裡的引擎。合格返回原值，否则抛 ValueError。
+    合格 = 裸命令名（例如 claude / claude.cmd / claude.exe；起子程序前 shutil.which 找到的實際檔案再用 trusted_path 檢查），
+    或绝对路径：文件名是这几个之一、文件存在且可执行，而且 trusted_path 通過（檔案與每一層上層目錄屬於自己或 root、別人不可寫、
+    不在暫存／共用目錄）。新增的四個引擎允許空字串，表示按預設名找。"""
     field = field or f"{name}.command"
     def bad():  # 只在真的不合格時才組錯誤訊息（tr 可能要查系統語言）
         return ValueError(tr("{field} 只能填命令名 {names}，或这个命令的绝对路径（文件必须存在且可执行），不能带参数、特殊符号或相对路径：{value}", field=field, names=_allowed_names(name), value=_show(value)))
@@ -69,6 +73,8 @@ def check_command(name: str, value, field: str | None = None) -> str:
         raise bad()
     if not os.path.isfile(value) or not os.access(value, os.X_OK):
         raise bad()
+    if not trusted_path(value):  # 例如 /tmp/x/bin/claude：檔名對，但別人能放、能改
+        raise ValueError(tr("{field} 指向的文件或它所在的文件夹不属于你、其他用户能写入，或位于临时/共享文件夹，不会执行：{value}", field=field, value=_show(value)))
     return value
 
 
@@ -199,3 +205,12 @@ def check_patch(patch: dict) -> None:
             check_chat_models(chat["models"])
         if "default" in chat and type(chat["default"]) is not str:
             raise ValueError(tr("{field} 必须是字符串", field="chat.default"))
+
+
+def which_trusted(cmd: str) -> str | None:
+    """起子程序前取可執行檔：shutil.which 找到的檔案也要通過 trusted_path（PATH 裡被塞進可寫目錄時不執行）。"""
+    import shutil
+    found = shutil.which(cmd)
+    if found and not trusted_path(os.path.abspath(found)):
+        return None
+    return found

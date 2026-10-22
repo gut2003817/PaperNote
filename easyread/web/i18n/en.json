@@ -1453,5 +1453,10 @@
  "目标文件夹其他用户也能写入，不能把文献库放在这里：{path}": "Other users can write to the target folder, so the library cannot be placed there: {path}",
  "目标文献库里有不属于当前用户的文件，不能使用或合并：{path}": "The target library contains files not owned by the current user, so it cannot be used or merged: {path}",
  "目标文献库里有其他用户也能写入的文件或文件夹，不能使用或合并：{path}": "The target library contains files or folders other users can write to, so it cannot be used or merged: {path}",
- "{field} 不支持额外参数，只能留空": "{field} does not accept extra arguments; leave it empty"
+ "{field} 不支持额外参数，只能留空": "{field} does not accept extra arguments; leave it empty",
+ "{field} 指向的文件或它所在的文件夹不属于你、其他用户能写入，或位于临时/共享文件夹，不会执行：{value}": "{field} points to a file, or a folder containing it, that is not yours, is writable by other users, or is in a temporary/shared folder, so it will not be run: {value}",
+ "链接导入只接受你家目录下的文件：{path}": "Linked import only accepts files under your home folder: {path}",
+ "这个文件夹不属于你、其他用户能写入，或位于临时/共享文件夹，不能导入：{path}": "This folder is not yours, is writable by other users, or is in a temporary/shared folder, so it cannot be imported: {path}",
+ "文件不属于你或位于临时/共享文件夹，已跳过：{path}": "Skipped a file that is not yours or is in a temporary/shared folder: {path}",
+ "这个 Zotero 数据文件夹不属于你、其他用户能写入，或位于临时/共享文件夹，不能读取：{path}": "This Zotero data folder is not yours, is writable by other users, or is in a temporary/shared folder, so it cannot be read: {path}"
 }

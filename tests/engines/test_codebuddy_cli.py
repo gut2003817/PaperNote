@@ -104,7 +104,8 @@ class CodeBuddyCliTest(unittest.TestCase):
                 codebuddy_cli.build_args({"extra_args": [arg]})
 
     def test_path_dispatch_and_model_mapping(self):
-        with mock.patch.object(codebuddy_cli.shutil, "which", return_value="custom.exe") as which:
+        with mock.patch.object(codebuddy_cli.shutil, "which", return_value="custom.exe") as which, \
+                mock.patch("easyread.cli_guard.trusted_path", return_value=True):  # 假路徑：只測分派
             self.assertEqual(engines.cli_path("codebuddy", {"command": "codebuddy.cmd"}), "custom.exe")
             which.assert_called_once_with("codebuddy.cmd")
             # 資安加固：command 不是 codebuddy 的命令名（或其絕對路徑）就當沒找到，不會被執行（cli_guard）
