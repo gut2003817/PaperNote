@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from datetime import date
 from urllib.parse import quote
 
@@ -16,7 +17,10 @@ def build_prompt(ctx: dict, engine: str) -> str:
     """模型只提供内容；标题、属性、划线和图片链接由程序组装。"""
     figures = [{key: fig.get(key, "") for key in ("id", "num", "page", "caption")}
                for fig in ctx.get("figures", []) if fig.get("has_box")]
-    metadata = {key: ctx.get(key) for key in ("title", "authors", "year", "source", "marks")}
+    metadata = {key: ctx.get(key) for key in ("title", "authors", "year", "source")}
+    metadata["marks"] = [{"n": n, "quote": _string(mark.get("quote"))[:200],
+                          "page": mark.get("page"), "body": _string(mark.get("body"))}
+                         for n, mark in enumerate(ctx.get("marks", []), 1)]
     instructions = """請依論文整理一篇可在 Obsidian 閱讀的繁體中文筆記。
 只回一個 JSON 物件、不要任何其他文字，也不要在 JSON 外加 Markdown 程式碼圍欄。
 欄位與格式如下：
@@ -25,6 +29,10 @@ def build_prompt(ctx: dict, engine: str) -> str:
 - tags：3~5 個主題標籤，字串陣列，不含 #。
 - problem、method、result、limits：Markdown 字串，分別說明問題與動機、方法重點、結果與論文限制。hook、short 也是字串。
 - figures：[{"id": "圖的 block id", "desc": "12 字以內的描述"}]。id 只能取自下方可選圖清單，只挑重要的，不限張數；沒有適合的就給空陣列。
+在 problem、method、result、limits 最相關的重點段落之後，單獨一行放 {{mark:N}}（劃線編號）與 {{fig:ID}}（圖的 block id）。
+每個記號最多用一次；與任何重點無關的劃線不要放，程式會另列「其他劃線」。不要複製劃線原文，也不要自己寫圖片連結。
+挑了圖就請在對應重點放記號；沒有記號的圖會接在「結果」段落最後。hook（30 秒版）不放圖與劃線記號。
+下方 quote 超過 200 字時已截斷，完整劃線由程式放入筆記。
 - diagrams：[{"title": "示意圖標題", "mermaid": "Mermaid 語法"}]。mermaid 只放 Mermaid 語法本身，不含三個反引號圍欄；沒有適合的就給空陣列。
 內容只能來自論文；讀者劃線與筆記只用來辨識關注點，不可當作論文證據。
 不要編造數據或引用，推論要標「（推論）」，保留論文原有的確定程度。不要寫「我的想法」。
@@ -108,7 +116,7 @@ _FENCE_CLOSE = re.compile(r"^\s{0,3}(`{3,}|~{3,})\s*$")
 _H1 = re.compile(r"^((?:\s{0,3}(?:>[ \t]?|[-*+][ \t]+|\d{1,9}[.)][ \t]+))*)\s{0,3}#(?:[ \t]+|$)")
 
 
-def _markdown(value: str) -> str:
+def _markdown(value: str, transform: Callable[[str], str] | None = None) -> str:
     # 模型即使忽略提示词，也不能再增加笔记的一层标题；程式码保持原样。
     lines, fence = [], None
     for line in value.splitlines():
@@ -127,7 +135,7 @@ def _markdown(value: str) -> str:
         line = _H1.sub(r"\1### ", line)
         # Setext 一级标题降为二级，避免 Obsidian 识别为额外 H1。
         line = re.sub(r"^\s{0,3}=+\s*$", "---", line)
-        lines.append(line)
+        lines.append(transform(line) if transform is not None else line)
     if fence is not None:  # 模型没闭合围栏：补上，免得吞掉后面所有段落
         lines.append(fence)
     return "\n".join(lines).strip()
@@ -149,37 +157,68 @@ def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None =
     title = _inline(ctx.get("title")) or _inline(data.get("short")) or "未命名論文"  # i18n-ok 固定繁体笔记格式
     parts = ["\n".join(lines), "# " + title]
     normalized = _normalize(data)
-    for heading, key in (("30 秒版", "hook"), ("問題與動機", "problem"), ("方法重點", "method")):  # i18n-ok 固定繁体笔记格式
-        parts.append("## " + heading + "\n\n" + _markdown(normalized[key]))
-    for diagram in normalized["diagrams"]:
-        if diagram["mermaid"]:
-            parts.append("**" + _inline(diagram["title"]) + "**\n\n```mermaid\n" + diagram["mermaid"] + "\n```")
-    parts.append("## 結果\n\n" + _markdown(normalized["result"]))  # i18n-ok 固定繁体笔记格式
     figures = {fig["id"]: fig for fig in ctx.get("figures", [])}
-    images, seen = [], set()
+    images = {}
     for selected in normalized["figures"]:
         id_ = selected["id"]
-        if id_ not in figures or id_ not in fig_files or id_ in seen:
+        if id_ not in figures or id_ not in fig_files or id_ in images:
             continue
-        seen.add(id_)
         fig = figures[id_]
         num, page, desc = _inline(fig.get("num")), _inline(fig.get("page")), _inline(selected["desc"])
         alt = re.sub(r"([\\\[\]])", r"\\\1", f"圖{num} {desc}")  # i18n-ok 固定繁体笔记格式
-        images.append(f"![{alt}](附圖/{quote(fig_files[id_], safe='')})\n圖{num}：{desc}（第 {page} 頁）")  # i18n-ok 固定繁体笔记格式
-    if images:
-        parts.append("## 重要圖表\n\n" + "\n\n".join(images))  # i18n-ok 固定繁体笔记格式
+        images[id_] = f"![{alt}](附圖/{quote(fig_files[id_], safe='')})\n圖{num}：{desc}（第 {page} 頁）"  # i18n-ok 固定繁体笔记格式
     marks = []
     for mark in ctx.get("marks", []):
-        entry = "\n".join("> " + line for line in _string(mark.get("quote")).splitlines())
+        # 原句与多行笔记均留在同一个引用内，防止页码或笔记变成外部段落。
+        entry = _markdown(_string(mark.get("quote")))
         if mark.get("page") is not None:
             entry += f"\n（第 {_inline(mark['page'])} 頁）"  # i18n-ok 固定繁体笔记格式
         if _string(mark.get("body")).strip():
             entry += "\n筆記：" + _markdown(mark["body"])  # i18n-ok 固定繁体笔记格式
-        marks.append(entry)
-    parts.append("## 我的劃線\n\n" + ("\n\n".join(marks) if marks else "（本篇沒有劃線）"))  # i18n-ok 固定繁体笔记格式
-    limits = _markdown(normalized["limits"]) or "（論文沒有明確討論限制）"  # i18n-ok 固定繁体笔记格式
+        marks.append("\n".join("> " + line for line in entry.splitlines()))
+
+    seen_figures, seen_marks = set(), set()
+
+    def expand(match: re.Match) -> str:
+        kind, id_ = match.groups()
+        if kind == "fig":
+            if id_ not in images or id_ in seen_figures:
+                return ""
+            seen_figures.add(id_)
+            block = images[id_]
+        else:
+            # 先检查文本，避免恶意超长整数触发 int 的转换限制。
+            number = id_.lstrip("0")
+            if not re.fullmatch(r"[0-9]+", id_) or not number or len(number) > len(str(len(marks))):
+                return ""
+            n = int(number)
+            if n > len(marks) or n in seen_marks:
+                return ""
+            seen_marks.add(n)
+            block = marks[n - 1]
+        return "\n\n" + block + "\n\n"
+
+    def placed(value: str) -> str:
+        # 复用围栏追踪：先规范 Markdown，再仅在围栏外展开记号。
+        # 再规范一次，防止删除/展开行中记号后露出新的标题或未闭合围栏。
+        value = _markdown(_markdown(value), lambda line: re.sub(r"\{\{(fig|mark):([^{}]*)\}\}", expand, line))
+        return re.sub(r"\n{3,}", "\n\n", _markdown(value))
+
+    sections = {key: placed(normalized[key]) for key in ("problem", "method", "result", "limits")}
+    for heading, key in (("30 秒版", "hook"), ("問題與動機", "problem"), ("方法重點", "method")):  # i18n-ok 固定繁体笔记格式
+        text = _markdown(normalized[key]) if key == "hook" else sections[key]
+        parts.append("## " + heading + "\n\n" + text)
+    for diagram in normalized["diagrams"]:
+        if diagram["mermaid"]:
+            parts.append("**" + _inline(diagram["title"]) + "**\n\n```mermaid\n" + diagram["mermaid"] + "\n```")
+    result = [sections["result"]] + [image for id_, image in images.items() if id_ not in seen_figures]
+    parts.append("## 結果\n\n" + "\n\n".join(result))  # i18n-ok 固定繁体笔记格式
+    other_marks = [mark for n, mark in enumerate(marks, 1) if n not in seen_marks]
+    if other_marks:
+        parts.append("## 其他劃線\n\n" + "\n\n".join(other_marks))  # i18n-ok 固定繁体笔记格式
+    limits = sections["limits"] or "（論文沒有明確討論限制）"  # i18n-ok 固定繁体笔记格式
     parts.append("## 限制與我的想法\n\n" + limits + "\n\n### 我的想法")  # i18n-ok 固定繁体笔记格式
-    return "\n\n".join(parts) + "\n\n"
+    return re.sub(r"\n{3,}", "\n\n", "\n\n".join(parts)) + "\n\n"
 
 
 def generate(ws, cfg: dict, cancel=None, model: str | None = None) -> dict:

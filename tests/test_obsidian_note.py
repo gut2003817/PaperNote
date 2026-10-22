@@ -46,11 +46,11 @@ def test_render_has_single_h1_and_frontmatter_fields(ctx, data):
 def test_render_section_order(ctx, data):
     text = obsidian_note.render(ctx, data, {"fig-a": "a.png"})
     sections = ["# 論文標題", "## 30 秒版", "## 問題與動機", "## 方法重點",
-                "**方法流程**", "```mermaid", "## 結果", "## 重要圖表", "## 我的劃線",
+                "**方法流程**", "```mermaid", "## 結果", "![圖2", "## 其他劃線",
                 "## 限制與我的想法", "### 我的想法"]
     positions = [text.index(s) for s in sections]
     assert positions == sorted(positions)
-    assert "> 第一行\n> 第二行\n（第 3 頁）\n筆記：待討論" in text
+    assert "> 第一行\n> 第二行\n> （第 3 頁）\n> 筆記：待討論" in text
     assert "> 無頁碼\n\n" in text
 
 
@@ -63,7 +63,7 @@ def test_render_my_thoughts_is_empty(ctx, data):
 
 def test_render_empty_marks_and_figures_placeholders():
     text = obsidian_note.render({}, {}, {})
-    assert "## 我的劃線\n\n（本篇沒有劃線）" in text
+    assert "劃線" not in text
     assert "（論文沒有明確討論限制）" in text
     assert "重要圖表" not in text and "```mermaid" not in text
     assert "# 未命名論文" in text
@@ -213,3 +213,101 @@ def test_render_keeps_headings_inside_real_code_fence(ctx, data):
     md = obsidian_note.render(ctx, data, {}, today="2026-10-22")
     assert "# 這是程式註解" in md.splitlines()
     assert "### 這是程式註解" not in md
+
+
+def test_render_places_figure_inline_at_marker(ctx, data):
+    data['method'] = '方法前{{fig:fig-a}}方法後'
+    md = obsidian_note.render(ctx, data, {'fig-a': 'a.png'})
+    assert '方法前\n\n![圖2 整體架構](附圖/a.png)\n圖2：整體架構（第 4 頁）\n\n方法後' in md
+    assert md.index('![圖2') < md.index('## 結果')
+
+
+def test_render_unplaced_figure_goes_to_end_of_result(ctx, data):
+    md = obsidian_note.render(ctx, data, {'fig-a': 'a.png'})
+    assert md.index('結果說明') < md.index('![圖2') < md.index('## 其他劃線')
+
+
+def test_render_places_mark_inline_and_rest_go_to_other_marks(ctx, data):
+    data['problem'] = '研究問題\n{{mark:1}}\n下一點'
+    md = obsidian_note.render(ctx, data, {})
+    assert '研究問題\n\n> 第一行\n> 第二行\n> （第 3 頁）\n> 筆記：待討論\n\n下一點' in md
+    assert '第一行' not in md.split('## 其他劃線')[1]
+    assert '> 無頁碼' in md.split('## 其他劃線')[1]
+
+
+def test_render_marker_used_once_duplicates_removed(ctx, data):
+    data['problem'] = '{{fig:fig-a}} {{mark:1}}'
+    data['method'] = '{{fig:fig-a}} {{mark:1}}'
+    data['limits'] = '{{fig:fig-a}} {{mark:1}}'
+    md = obsidian_note.render(ctx, data, {'fig-a': 'a.png'})
+    assert md.count('![圖2') == md.count('> 第一行') == 1
+    assert '{{' not in md
+
+
+def test_render_unknown_and_invalid_markers_removed(ctx, data):
+    data['problem'] = '{{mark:0}} {{mark:99}} {{mark:x}} {{fig:fig-b}} {{fig:unknown}}'
+    md = obsidian_note.render(ctx, data, {'fig-b': 'unselected.png'})
+    assert '{{' not in md and '![' not in md
+    assert '> 第一行' in md and '> 無頁碼' in md
+
+
+@pytest.mark.parametrize('fence', ['```', '~~~~'])
+def test_render_marker_inside_code_fence_untouched(ctx, data, fence):
+    data['method'] = f'{fence}\n{{{{fig:fig-a}}}}\n{{{{mark:1}}}}\n{fence}\n{{{{mark:1}}}}'
+    md = obsidian_note.render(ctx, data, {'fig-a': 'a.png'})
+    assert f'{fence}\n{{{{fig:fig-a}}}}\n{{{{mark:1}}}}\n{fence}' in md
+    assert md.count('> 第一行') == 1
+    assert md.index('![圖2') > md.index('## 結果')
+
+
+def test_render_no_other_marks_section_when_all_placed(ctx, data):
+    data['method'] = '{{mark:1}}{{mark:2}}'
+    md = obsidian_note.render(ctx, data, {})
+    assert '## 其他劃線' not in md and '## 我的劃線' not in md
+
+
+def test_render_no_marks_means_no_marks_section(ctx, data):
+    ctx['marks'] = []
+    md = obsidian_note.render(ctx, data, {})
+    assert '劃線' not in md
+
+
+def test_render_my_thoughts_is_still_last_with_other_marks(ctx, data):
+    data['limits'] = '限制{{mark:1}}'
+    md = obsidian_note.render(ctx, data, {})
+    assert md.index('## 其他劃線') < md.index('## 限制與我的想法')
+    assert '第一行' not in md.split('## 其他劃線')[1].split('## 限制與我的想法')[0]
+    assert md.endswith('### 我的想法\n\n')
+
+
+def test_render_mark_block_page_line_inside_quote(ctx, data):
+    ctx['marks'][0]['body'] = '# 想法\n第二行\n```\n未閉合'
+    md = obsidian_note.render(ctx, data, {})
+    assert '> 第一行\n> 第二行\n> （第 3 頁）\n> 筆記：### 想法\n> 第二行\n> ```\n> 未閉合\n> ```' in md
+    assert '第 None 頁' not in md
+
+
+def test_render_no_important_figures_section_anymore(ctx, data):
+    md = obsidian_note.render(ctx, data, {'fig-a': 'a.png'})
+    assert '## 重要圖表' not in md and '![圖2' in md
+
+
+def test_build_prompt_numbers_marks_and_explains_markers(ctx):
+    ctx['marks'][0]['quote'] = '長' * 250
+    md = obsidian_note.build_prompt(ctx, 'codex')
+    info = json.loads(md.split('論文資訊與讀者劃線：\n')[1].split('\n\n')[0])
+    assert info['marks'] == [dict(n=1, quote='長' * 200, page=3, body='待討論'),
+                             dict(n=2, quote='無頁碼', page=None, body='')]
+    for token in ('{{mark:N}}', '{{fig:ID}}', '最多用一次', '其他劃線', '截斷', '結果', '單獨一行', '不要複製劃線原文'):
+        assert token in md
+
+
+@pytest.mark.parametrize('adjacent', ['{{mark:99}}# 標題\n---', '{{fig:fig-a}}```\n# 標題',
+                                     '{{mark:1}}\n# 標題\n```'])
+def test_render_inline_expansion_does_not_create_second_h1(ctx, data, adjacent):
+    data['problem'] = adjacent
+    data['figures'][0]['desc'] = '惡意]\n# 標題\n---\n```'
+    md = obsidian_note.render(ctx, data, {'fig-a': 'a.png'})
+    assert re.findall(r'^# .*$', md, re.M) == ['# 論文標題']
+    assert not _open_fence_at_end(md)
+    assert md.endswith('### 我的想法\n\n')

@@ -60,6 +60,7 @@ class GenerateSetup(unittest.TestCase):
 
 class GenerateTest(GenerateSetup):
     def test_generate_writes_note_and_figures_into_vault(self):
+        self.data["method"] = "方法重點\n{{fig:f1}}\n{{mark:1}}"
         cancel = threading.Event()
         result = obsidian_note.generate(self.ws, self.cfg, cancel=cancel, model="gpt")
         path = Path(result["path"])
@@ -70,7 +71,12 @@ class GenerateTest(GenerateSetup):
         text = unquote(path.read_text())
         self.assertTrue(text.startswith("---\n"))
         self.assertEqual(text.count("\n# "), 1)
-        self.assertIn("Evidence", text)
+        self.assertIn("> Evidence\n> （第 1 頁）", text)
+        self.assertLess(text.index("](附圖/"), text.index("## 結果"))
+        self.assertLess(text.index("> Evidence"), text.index("## 結果"))
+        self.assertNotIn("{{", text)
+        self.assertNotIn("## 其他劃線", text)
+        self.assertNotIn("## 重要圖表", text)
         image = next((path.parent / "附圖").iterdir())
         self.assertIn(f"](附圖/{image.name})", text)
         self.assertTrue(image.read_bytes().startswith(b"\x89PNG"))
