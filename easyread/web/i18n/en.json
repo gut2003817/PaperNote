@@ -1195,6 +1195,12 @@
  "已写入：{path}": "Written to: {path}",
  "有 {n} 张图没能截取，已略过": "{n} figure(s) could not be captured and were skipped",
  "写进 Obsidian 失败：{msg}": "Writing to Obsidian failed: {msg}",
+ "含 AI 示意图": "Include AI illustrations",
+ "勾选 AI 示意图会再用 Codex 画 1~4 张图，每张约一分钟。": "With AI illustrations checked, Codex also draws 1–4 images, about a minute each.",
+ "已生成 {n} 张 AI 示意图": "Generated {n} AI illustration(s)",
+ "有 {n} 张 AI 示意图没能生成：{msg}": "{n} AI illustration(s) could not be generated: {msg}",
+ "正在生成 AI 示意图（{done}/{total}）": "Generating AI illustrations ({done}/{total})",
+ "Codex 没有生成图片": "Codex did not produce an image",
  "等了很久还没完成，请到任务状态里查看": "It is taking very long; check the task status",
  "尚未设置 Obsidian 文件夹": "The Obsidian folder is not set yet",
  "模型回复不是有效的 JSON": "The model's reply was not valid JSON"

@@ -13,7 +13,7 @@ from .i18n import tr
 _STRINGS = ("hook", "short", "problem", "method", "result", "limits")
 
 
-def build_prompt(ctx: dict, engine: str) -> str:
+def build_prompt(ctx: dict, engine: str, ai_images: bool = False) -> str:
     """模型只提供内容；标题、属性、划线和图片链接由程序组装。"""
     figures = [{key: fig.get(key, "") for key in ("id", "num", "page", "caption")}
                for fig in ctx.get("figures", []) if fig.get("has_box")]
@@ -38,6 +38,14 @@ def build_prompt(ctx: dict, engine: str) -> str:
 不要編造數據或引用，推論要標「（推論）」，保留論文原有的確定程度。不要寫「我的想法」。
 段落不要重複論文標題、作者或來源，不使用一級標題，也不要產生圖片連結。
 """
+    if ai_images:
+        instructions += """- ai_images：[{"kind": "cover 或 explain", "desc": "12 字以內中文描述", "prompt": "英文畫面描述"}]。
+恰好 1 張 cover：整篇核心概念的封面概念圖，讓聽眾一眼看懂；0~3 張 explain：只圖解真的難懂的概念。
+prompt 請依論文內容決定畫風（扁平插畫、資訊圖表風、示意圖等），用英文描述具體構圖與元素。
+圖中不得有任何文字、字母、數字、標誌；只畫論文確實提出的概念，不畫不存在的數據結果。
+explain 用 {{img:N}} 記號放在 problem、method、result、limits 的相關重點段落之後，單獨一行。
+N 是 explain 在陣列中的 1 起算序號，只算 explain、不算 cover；每個記號最多一次。cover 不用記號。
+"""  # i18n-ok 提示词
     # 提示词与固定的繁体笔记格式不是界面词条。
     source = ("論文在當前目錄的 paper.json，請用 Read 讀取原文。" if engine == "claude"  # i18n-ok 提示词
               else "論文內容：\n" + str(ctx.get("text") or ""))  # i18n-ok 提示词
@@ -69,6 +77,12 @@ def _normalize(data: dict) -> dict:
                       if isinstance(fig, dict) and isinstance(fig.get("id"), str) and fig["id"]]
     out["diagrams"] = [{"title": _string(diagram.get("title")), "mermaid": _mermaid(diagram.get("mermaid"))}
                        for diagram in _list(data.get("diagrams")) if isinstance(diagram, dict)]
+    visuals = [dict(kind=image["kind"], desc=_string(image.get("desc")), prompt=image["prompt"][:1500])
+               for image in _list(data.get("ai_images"))
+               if isinstance(image, dict) and image.get("kind") in ("cover", "explain")
+               and isinstance(image.get("prompt"), str) and image["prompt"].strip()]
+    out["ai_images"] = ([image for image in visuals if image["kind"] == "cover"][:1]
+                        + [image for image in visuals if image["kind"] == "explain"][:3])
     return out
 
 
@@ -184,7 +198,8 @@ def _markdown(value: str, transform: Callable[[str], str] | None = None) -> str:
     return "\n".join(lines).strip("\n")
 
 
-def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None = None) -> str:
+def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None = None,
+           ai_files: dict[str, str] | None = None) -> str:
     """固定繁体笔记结构；未知或未导出的图静默略过，不产生坏链接。"""
     # 保留调用者提供的标签原文（解析回复时才清理），不改写输入。
     tags = _list(data.get("tags"))
@@ -223,7 +238,20 @@ def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None =
             entry += "\n筆記：" + separator + body  # i18n-ok 固定繁体笔记格式
         marks.append("\n".join("> " + line for line in entry.splitlines()))
 
-    seen_figures, seen_marks = set(), set()
+    ai_blocks, explains = {}, []
+    for visual in normalized["ai_images"]:
+        if visual["kind"] == "cover":
+            key = "cover"
+        else:
+            explains.append(visual)
+            key = f"explain-{len(explains)}"
+        if key not in (ai_files or {}):
+            continue
+        desc = _inline(visual["desc"]).replace("<!--", "&lt;!--")
+        alt = re.sub(r"([\\\[\]])", r"\\\1", f"示意圖（AI 生成） {desc}")  # i18n-ok 固定繁体笔记格式
+        ai_blocks[key] = f"![{alt}](附圖/{quote(_clean(ai_files[key]), safe='')})\n示意圖（AI 生成）：{desc}"  # i18n-ok 固定繁体笔记格式
+
+    seen_figures, seen_marks, seen_ai = set(), set(), set()
 
     def expand(match: re.Match) -> str:
         kind, id_ = match.groups()
@@ -232,6 +260,16 @@ def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None =
                 return ""
             seen_figures.add(id_)
             block = images[id_]
+        elif kind == "img":
+            number = id_.lstrip("0")
+            if not re.fullmatch(r"[0-9]+", id_) or not number or len(number) > len(str(len(explains))):
+                return ""
+            n = int(number)
+            key = f"explain-{n}"
+            if n > len(explains) or key not in ai_blocks or key in seen_ai:
+                return ""
+            seen_ai.add(key)
+            block = ai_blocks[key]
         else:
             # 先检查文本，避免恶意超长整数触发 int 的转换限制。
             number = id_.lstrip("0")
@@ -247,12 +285,20 @@ def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None =
     def placed(value: str) -> str:
         # 复用围栏追踪：先规范 Markdown，再仅在围栏外展开记号。
         # 再规范一次，防止删除/展开行中记号后露出新的标题或未闭合围栏。
-        value = _markdown(_markdown(value), lambda line: re.sub(r"\{\{(fig|mark):([^{}]*)\}\}", expand, line))
+        value = _markdown(_markdown(value), lambda line: re.sub(r"\{\{(fig|mark|img):([^{}]*)\}\}", expand, line))
         return re.sub(r"\n{3,}", "\n\n", _markdown(value))
 
     sections = {key: placed(normalized[key]) for key in ("problem", "method", "result", "limits")}
     for heading, key in (("30 秒版", "hook"), ("問題與動機", "problem"), ("方法重點", "method")):  # i18n-ok 固定繁体笔记格式
         text = _markdown(normalized[key]) if key == "hook" else sections[key]
+        if key == "hook" and "{{img:" in text:
+            # 删除记号可能露出标题或围栏，和正文一样再规范一次。
+            text = _markdown(_markdown(text, lambda line: re.sub(r"\{\{img:[^{}]*\}\}", "", line)))
+        if key == "hook" and "cover" in ai_blocks:
+            text += "\n\n" + ai_blocks["cover"]
+        if key == "method":
+            text += "".join("\n\n" + ai_blocks[f"explain-{n}"] for n in range(1, len(explains) + 1)
+                            if f"explain-{n}" in ai_blocks and f"explain-{n}" not in seen_ai)
         parts.append("## " + heading + "\n\n" + text)
     for diagram in normalized["diagrams"]:
         if diagram["mermaid"]:
@@ -267,10 +313,11 @@ def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None =
     return re.sub(r"\n{3,}", "\n\n", "\n\n".join(parts)) + "\n\n"
 
 
-def generate(ws, cfg: dict, cancel=None, model: str | None = None) -> dict:
+def generate(ws, cfg: dict, cancel=None, model: str | None = None,
+             ai_images: bool = False, progress=None) -> dict:
     """先完成模型调用与解析，再新增笔记及附图，绝不覆盖已有文件。"""
     # chat_models → engines → config 有初始化依赖，调用时再载入。
-    from . import chat_models, engines, obsidian_context, obsidian_figures, obsidian_vault
+    from . import chat_models, engines, obsidian_aiimg, obsidian_context, obsidian_figures, obsidian_vault
 
     path = cfg.get("obsidian_vault", "")
     if not path:
@@ -278,7 +325,7 @@ def generate(ws, cfg: dict, cancel=None, model: str | None = None) -> dict:
     vault = obsidian_vault.check_vault(path)
     ctx = obsidian_context.collect(ws)
     ecfg, _ = chat_models.engine_cfg(cfg, model)
-    prompt = build_prompt(ctx, ecfg["engine"])
+    prompt = build_prompt(ctx, ecfg["engine"], ai_images=ai_images)
     text = engines.run(ecfg, prompt, ws.root, cancel=cancel)
     data = parse_reply(text)
 
@@ -302,11 +349,47 @@ def generate(ws, cfg: dict, cancel=None, model: str | None = None) -> dict:
                 ws, blocks[id_], short, selected["desc"], attach_dir)
         except Exception:  # noqa: BLE001 单张截图失败不阻断整篇笔记，包括 PDFium 错误
             skipped += 1
-    md = render(ctx, data, fig_files)
+    ai_files, ai_skipped, ai_error = {}, 0, ""
+    if ai_images and data["ai_images"]:
+        codex_cfg = cfg.get("codex") or {}
+        explain_n = 0
+        total = len(data["ai_images"])
+        # 逐张生成便于取消及回报进度；任何生图错误都不能阻断笔记。
+        try:
+            available = engines.codex_path(codex_cfg)
+            if not available:
+                ai_error = tr("找不到 Codex 命令：{cmd}（先装好并登录 Codex CLI）",
+                              cmd=codex_cfg.get("command") or "codex")[:200]
+        except Exception as exc:  # noqa: BLE001
+            available, ai_error = False, str(exc)[:200]
+        if progress is not None and available:
+            progress(0, total)  # 第一张约一分钟，先让前端知道已进入生图
+        for done, visual in enumerate(data["ai_images"], 1):
+            if visual["kind"] == "cover":
+                key, image_stem = "cover", f"{short}-AI-封面"  # i18n-ok 固定繁体笔记格式
+            else:
+                explain_n += 1
+                key = f"explain-{explain_n}"
+                image_stem = f"{short}-AI-示意{explain_n}-{visual['desc']}"  # i18n-ok 固定繁体笔记格式
+            try:
+                if not available:
+                    ai_skipped += 1
+                else:
+                    ai_files[key] = obsidian_aiimg.generate_image(
+                        codex_cfg, visual["prompt"], attach_dir,
+                        obsidian_vault.safe_name(image_stem), cancel=cancel)
+            except Exception as exc:  # noqa: BLE001 失败、逾时或取消都只略过这张图
+                ai_skipped += 1
+                if not ai_error:
+                    ai_error = str(exc)[:200] or type(exc).__name__
+            if progress is not None:
+                progress(done, total)
+    md = render(ctx, data, fig_files, ai_files=ai_files)
     stem = obsidian_vault.safe_name(short)
     if (notes_dir / f"{stem}.md").exists():
         stem = f"{stem}-{obsidian_vault.stamp()}"
     path = obsidian_vault.write_new(notes_dir, stem, ".md", md.encode("utf-8"))
     return {"path": str(path), "figures": len(fig_files),
             "diagrams": sum(bool(diagram["mermaid"]) for diagram in data["diagrams"]),
-            "skipped": skipped}
+            "skipped": skipped, "ai_images": len(ai_files),
+            "ai_skipped": ai_skipped, "ai_error": ai_error}

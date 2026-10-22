@@ -220,6 +220,37 @@ class EndpointTest(GenerateSetup):
         finally:
             conn.close()
 
+    def test_endpoint_passes_ai_images_only_when_true(self):
+        for value in (True, False, None, 1, "true", [], {}):
+            with self.subTest(value=value):
+                status, job = self.req("POST", body={"ai_images": value})
+                self.assertEqual(status, 200)
+                self.assertIs(job["ai_images"], value is True)
+        status, job = self.req("POST")
+        self.assertEqual(status, 200)
+        self.assertIs(job["ai_images"], False)
+
+    def test_small_worker_ai_progress_and_result(self):
+        expected = {"path": "fake.md", "figures": 1, "diagrams": 2, "skipped": 3,
+                    "ai_images": 1, "ai_skipped": 1, "ai_error": "fake failure"}
+        def generate(ws, cfg, **kwargs):
+            self.assertTrue(kwargs["ai_images"])
+            kwargs["progress"](1, 2)
+            self.assertEqual(self.app.jobs.recent[-1]["message"],
+                             tr("正在生成 AI 示意图（{done}/{total}）", done=1, total=2))
+            return expected
+        with patch("easyread.obsidian_note.generate", side_effect=generate):
+            self.start_worker()
+            _, submitted = self.req("POST", body={"ai_images": True})
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                job = self.app.jobs.small_status()[0]
+                if job["state"] in ("done", "error"):
+                    break
+                time.sleep(.01)
+            self.assertEqual(job["state"], "done")
+            self.assertEqual({k: job[k] for k in expected}, expected)
+
     def test_endpoint_requires_token(self):
         self.assertEqual(self.req("POST", token=False)[0], 403)
         self.assertEqual(self.app.jobs.small_status(), [])
@@ -267,3 +298,67 @@ class EndpointTest(GenerateSetup):
             time.sleep(.01)
         self.assertEqual((job["state"], job["message"]), ("error", "fake failure"))
         self.assertEqual(self.snapshot(), {})
+
+
+class GenerateAIImageTest(GenerateSetup):
+    def setUp(self):
+        super().setUp()
+        self.data["ai_images"] = [{"kind": "cover", "desc": "核心", "prompt": "cover scene"},
+                                  {"kind": "explain", "desc": "原理/概念", "prompt": "explain scene"}]
+        self.data["method"] = "方法\n{{img:1}}"
+        self.cfg["codex"]["model"] = "user-model"
+
+    def image(self, codex_cfg, visual, dest_dir, stem, cancel=None):
+        self.assertEqual(codex_cfg, self.cfg["codex"])
+        self.assertNotIn("/", stem)
+        path = dest_dir / (stem + ".png")
+        Image.new("RGB", (5, 5)).save(path)
+        return path.name
+
+    def test_generate_ai_images_success_counts(self):
+        from unittest.mock import Mock
+        progress = Mock()
+        cancel = threading.Event()
+        with patch("easyread.engines.codex_path", return_value="/fake/codex"), \
+                patch("easyread.obsidian_aiimg.generate_image", side_effect=self.image) as image:
+            result = obsidian_note.generate(self.ws, self.cfg, cancel=cancel, ai_images=True, progress=progress)
+        self.assertEqual((result["ai_images"], result["ai_skipped"], result["ai_error"]), (2, 0, ""))
+        self.assertEqual([c.args for c in progress.call_args_list], [(0, 2), (1, 2), (2, 2)])
+        self.assertTrue(all(c.kwargs["cancel"] is cancel for c in image.call_args_list))
+        text = Path(result["path"]).read_text()
+        self.assertEqual(text.count("![示意圖（AI 生成）"), 2)
+        self.assertIn("ai_images", self.run.call_args.args[1])
+
+    def test_generate_ai_image_failure_does_not_fail_note(self):
+        def image(c, visual, *args, **kwargs):
+            if visual == "explain scene":
+                raise RuntimeError("fake timeout " + "x" * 300)
+            return self.image(c, visual, *args, **kwargs)
+        with patch("easyread.engines.codex_path", return_value="/fake/codex"), \
+                patch("easyread.obsidian_aiimg.generate_image", side_effect=image):
+            result = obsidian_note.generate(self.ws, self.cfg, ai_images=True)
+        self.assertEqual((result["ai_images"], result["ai_skipped"]), (1, 1))
+        self.assertTrue(result["ai_error"].startswith("fake timeout"))
+        self.assertEqual(len(result["ai_error"]), 200)
+        self.assertTrue(Path(result["path"]).exists())
+
+    def test_generate_ai_images_without_codex_skips_all(self):
+        from unittest.mock import Mock
+        progress = Mock()
+        with patch("easyread.engines.codex_path", return_value=None), \
+                patch("easyread.obsidian_aiimg.generate_image") as image:
+            result = obsidian_note.generate(self.ws, self.cfg, ai_images=True, progress=progress)
+        image.assert_not_called()
+        self.assertEqual((result["ai_images"], result["ai_skipped"]), (0, 2))
+        self.assertIn("Codex", result["ai_error"])
+        self.assertTrue(Path(result["path"]).exists())
+        self.assertEqual(progress.call_count, 2)
+
+    def test_generate_ai_images_false_never_calls_codex(self):
+        with patch("easyread.engines.codex_path") as codex, \
+                patch("easyread.obsidian_aiimg.generate_image") as image:
+            result = obsidian_note.generate(self.ws, self.cfg, ai_images=False)
+        codex.assert_not_called()
+        image.assert_not_called()
+        self.assertEqual((result["ai_images"], result["ai_skipped"], result["ai_error"]), (0, 0, ""))
+        self.assertNotIn("ai_images", self.run.call_args.args[1])
