@@ -1186,5 +1186,16 @@
  "选择 Obsidian 文件夹": "Choose your Obsidian folder",
  "填写 Obsidian 文件夹的完整路径": "Enter the full path of your Obsidian folder",
  "论文笔记会写到这个文件夹里的“论文笔记”文件夹，只新增文件，不会覆盖已有的文件。留空表示不使用。": "Paper notes are written into a \"論文筆記\" folder inside this folder. Files are only added, never overwritten. Leave empty to turn this off.",
- "/Users/你/Documents/Obsidian Vault": "/Users/you/Documents/Obsidian Vault"
+ "/Users/你/Documents/Obsidian Vault": "/Users/you/Documents/Obsidian Vault",
+ "写进 Obsidian": "Write to Obsidian",
+ "模型思考中，约需一两分钟": "The model is thinking, this takes a minute or two",
+ "会用到你的 AI 额度，只有按下才会执行；不会覆盖已有的文件。": "This uses your AI quota and only runs when you press it. Existing files are never overwritten.",
+ "正在写进 Obsidian，进行中，请稍候": "Already writing to Obsidian, please wait",
+ "请先到 设置 → 阅读 设置 Obsidian 文件夹": "Set the Obsidian folder first in Settings → Reading",
+ "已写入：{path}": "Written to: {path}",
+ "有 {n} 张图没能截取，已略过": "{n} figure(s) could not be captured and were skipped",
+ "写进 Obsidian 失败：{msg}": "Writing to Obsidian failed: {msg}",
+ "等了很久还没完成，请到任务状态里查看": "It is taking very long; check the task status",
+ "尚未设置 Obsidian 文件夹": "The Obsidian folder is not set yet",
+ "模型回复不是有效的 JSON": "The model's reply was not valid JSON"
 }
