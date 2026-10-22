@@ -7,6 +7,9 @@
 - 只收 PNG、JPEG、WebP、GIF，服务端按文件头判断（不信客户端报的类型和扩展名，不收 SVG），单张上限 10 MB。外链图片（`![](http…)`）不会被渲染。
 - 导出：笔记里有图片时，导出 Markdown 变成 zip（`notes.md` + `note-images/`）；离线版 HTML 和在线演示会把用到的笔记图片带上。
 
+**笔记帮手的繁体写作习惯**
+- “点评／帮我改／起草稿”在回答语言是繁体中文时，提示词多带一段浓缩的写作规范（台湾用语与翻译腔、去 AI 腔、句子节奏、中英文空格、忠于论文原意；Markdown、公式、代码、引用号、原文引文不动），代码在 `easyread/langs.py` 的 `NOTE_STYLE` / `note_style()`。简体、英文，以及翻译和“问 AI”的提示词不变。规范改写自 zh-tw-writing（MIT，LCY000），授权见 `THIRD_PARTY_NOTICES.md`。
+
 **繁体中文支持**
 - 界面语言新增“繁体中文”（zh-TW，台湾用语）：软件、文件、设置、导入／导出等用词按台湾习惯，词典在 `easyread/web/i18n/zh-TW.json`，由 `scripts/gen_zhtw.py`（OpenCC s2twp + 人工修正 `scripts/zhtw_overrides.json`）生成，运行时不需要 OpenCC。系统语言是 zh-TW / zh-Hant / zh-HK / zh-MO（含 macOS 的 zh-Hant-TW）时自动用繁体，zh-CN / zh-Hans 等仍是简体；设置 → 阅读 → 界面语言也可以手动选。
 - 译文语言新增“繁体中文”：论文译成繁体、用台湾习惯用词与术语，“问 AI”、整理笔记的回答也用繁体；译文字体改用繁体字型（明体 / 黑体）。数据字段名（`zh`、`title_zh` 等）不变，旧论文不受影响。
