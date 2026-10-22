@@ -7,7 +7,7 @@ import threading
 import time
 from uuid import uuid4
 
-from . import chat_models, config, langs, translate, usage
+from . import chat_models, config, langs, obsidian_note, translate, usage
 from .engines import Cancelled, EngineError
 from .i18n import tr
 from .library import Library
@@ -212,6 +212,10 @@ class Jobs:
                     translate.answer(ws, cfg, job["note"], None)
                 elif job["kind"] == "retranslate":
                     translate.retranslate(ws, cfg, job["key"], job.get("hint", ""), None)
+                elif job["kind"] == "obsidian":
+                    result = obsidian_note.generate(ws, cfg, model=job.get("model"))
+                    for key in ("path", "figures", "diagrams", "skipped"):
+                        job[key] = result[key]
                 job["state"], job["message"] = "done", tr("完成")
             except Exception as e:  # noqa: BLE001
                 job["state"], job["message"] = "error", str(e)[:500]

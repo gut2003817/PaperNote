@@ -1,4 +1,4 @@
-"""Obsidian 笔记提示词、结构化回复解析与 Markdown 组装，不执行生成或写盘。"""
+"""Obsidian 笔记提示词、回复解析、Markdown 组装与生成流程。"""
 from __future__ import annotations
 
 import json
@@ -90,7 +90,7 @@ def parse_reply(text: str) -> dict:
                     return _normalize(json.loads(text[start:index + 1]))
                 except json.JSONDecodeError:
                     start = None
-    raise ValueError(tr("模型输出里没有 JSON：{text}").format(text=""))
+    raise ValueError(tr("模型回复不是有效的 JSON"))
 
 
 def _yaml(value) -> str:
@@ -168,3 +168,48 @@ def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None =
     limits = _markdown(normalized["limits"]) or "（論文沒有明確討論限制）"  # i18n-ok 固定繁体笔记格式
     parts.append("## 限制與我的想法\n\n" + limits + "\n\n### 我的想法")  # i18n-ok 固定繁体笔记格式
     return "\n\n".join(parts) + "\n\n"
+
+
+def generate(ws, cfg: dict, cancel=None, model: str | None = None) -> dict:
+    """先完成模型调用与解析，再新增笔记及附图，绝不覆盖已有文件。"""
+    # chat_models → engines → config 有初始化依赖，调用时再载入。
+    from . import chat_models, engines, obsidian_context, obsidian_figures, obsidian_vault
+
+    path = cfg.get("obsidian_vault", "")
+    if not path:
+        raise ValueError(tr("尚未设置 Obsidian 文件夹"))
+    vault = obsidian_vault.check_vault(path)
+    ctx = obsidian_context.collect(ws)
+    ecfg, _ = chat_models.engine_cfg(cfg, model)
+    prompt = build_prompt(ctx, ecfg["engine"])
+    text = engines.run(ecfg, prompt, ws.root, cancel=cancel)
+    data = parse_reply(text)
+
+    # 在解析成功之前不建立 vault 子目录、不留下任何产物。
+    notes_dir, attach_dir = obsidian_vault.note_dirs(vault)
+    figures = {fig["id"]: fig for fig in ctx["figures"]}
+    blocks = {block["id"]: block for block in (ws.load("paper") or {}).get("blocks", [])
+              if "id" in block}
+    short = data["short"] or ctx["title"]
+    fig_files, seen, skipped = {}, set(), 0
+    for selected in data["figures"]:
+        id_ = selected["id"]
+        if id_ in seen:
+            continue
+        seen.add(id_)
+        if not figures.get(id_, {}).get("has_box") or id_ not in blocks:
+            skipped += 1
+            continue
+        try:
+            fig_files[id_] = obsidian_figures.export_figure(
+                ws, blocks[id_], short, selected["desc"], attach_dir)
+        except Exception:  # noqa: BLE001 单张截图失败不阻断整篇笔记，包括 PDFium 错误
+            skipped += 1
+    md = render(ctx, data, fig_files)
+    stem = obsidian_vault.safe_name(short)
+    if (notes_dir / f"{stem}.md").exists():
+        stem = f"{stem}-{obsidian_vault.stamp()}"
+    path = obsidian_vault.write_new(notes_dir, stem, ".md", md.encode("utf-8"))
+    return {"path": str(path), "figures": len(fig_files),
+            "diagrams": sum(bool(diagram["mermaid"]) for diagram in data["diagrams"]),
+            "skipped": skipped}

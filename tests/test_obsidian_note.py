@@ -9,6 +9,7 @@ from datetime import date
 import pytest
 
 from easyread import langs, obsidian_note
+from easyread.i18n import tr
 
 
 @pytest.fixture
@@ -116,8 +117,9 @@ def test_parse_reply_missing_fields_defaults():
 @pytest.mark.parametrize("text", ["無 JSON", "[]", '{"hook":', '{bad}', 'null'])
 def test_parse_reply_invalid_raises(text, monkeypatch):
     monkeypatch.setenv("EASYREAD_LANG", "zh-TW")
-    with pytest.raises(ValueError, match="JSON"):
+    with pytest.raises(ValueError) as error:
         obsidian_note.parse_reply(text)
+    assert str(error.value) == tr("模型回复不是有效的 JSON")
 
 
 def test_parse_reply_strips_fences_inside_mermaid():

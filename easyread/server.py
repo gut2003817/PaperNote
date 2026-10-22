@@ -477,6 +477,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._notes_zip(ws, body)
             if action == "annotated-pdf":
                 return self._annotated_pdf(ws)
+            if action == "obsidian-note":
+                if not config.load().get("obsidian_vault"):
+                    raise ValueError(tr("尚未设置 Obsidian 文件夹"))
+                return self._json(200, app.jobs.submit_small("obsidian", ws.id, model=body.get("model")))
             if action == "chat" and len(parts) > 5:
                 sub, tid = parts[5], body.get("thread", "")
                 if sub == "pin":
