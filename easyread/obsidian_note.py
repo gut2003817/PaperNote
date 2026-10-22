@@ -56,7 +56,7 @@ def _list(value) -> list:
 
 def _mermaid(value) -> str:
     # 有些模型把围栏又放进 JSON 字串，删除整条围栏行。
-    return "\n".join(line for line in _string(value).splitlines()
+    return "\n".join(line for line in _clean(_string(value)).splitlines()
                      if not line.lstrip().startswith("```")).strip()
 
 
@@ -101,44 +101,87 @@ def parse_reply(text: str) -> dict:
     raise ValueError(tr("模型回复不是有效的 JSON"))
 
 
+def _clean(value) -> str:
+    # 保留换行与 tab，移除 YAML 禁止的控制字元及无法编码的代理字元。
+    return re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\ud800-\udfff\ufffe\uffff]", "",
+                  "" if value is None else str(value))
+
+
 def _yaml(value) -> str:
     # JSON 双引号字串也是合法 YAML，统一处理反斜线、引号及换行。
-    return json.dumps("" if value is None else str(value), ensure_ascii=False)
+    return json.dumps(_clean(value), ensure_ascii=False)
 
 
 def _inline(value) -> str:
-    return " ".join(str(value or "").splitlines()).strip()
+    text = " ".join(_clean(value).splitlines()).strip()
+    return text + "".join(" " + token for token in _unclosed(text))
 
 
-_FENCE_OPEN = re.compile(r"^\s{0,3}(`{3,}|~{3,})(.*)$")
-_FENCE_CLOSE = re.compile(r"^\s{0,3}(`{3,}|~{3,})\s*$")
+_FENCE_OPEN = re.compile(r"^((?: {0,3}> ?)* {0,3})(`{3,}|~{3,})(.*)$")
+_FENCE_CLOSE = re.compile(r"^((?: {0,3}> ?)* {0,3})(`{3,}|~{3,}) *$")
 # 一级标题可能藏在引用、列表里（> # x、- # x、1. # x），同样降级
-_H1 = re.compile(r"^((?:\s{0,3}(?:>[ \t]?|[-*+][ \t]+|\d{1,9}[.)][ \t]+))*)\s{0,3}#(?:[ \t]+|$)")
+_CONTAINER = r"(?: *(?:> ?|[-*+] +|[0-9]{1,9}[.)] +))*"
+_H1 = re.compile(r"^(" + _CONTAINER + r" *)#(?: +|$)")
+_SETEXT = re.compile(r"^(" + _CONTAINER + r" *)=+ *$")
+_CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)([\s\S]*?)(?<!`)\1(?!`)")
+
+
+def _unclosed(value: str) -> list[str]:
+    visible = "\n\n".join(_CODE_SPAN.sub("", block) for block in re.split(r"\n *\n", value))
+    return [token for token in ("%%", "$$") if visible.count(token) % 2]
 
 
 def _markdown(value: str, transform: Callable[[str], str] | None = None) -> str:
     # 模型即使忽略提示词，也不能再增加笔记的一层标题；程式码保持原样。
-    lines, fence = [], None
-    for line in value.splitlines():
+    lines, outside, fence = [], [], None
+    list_indent = 0
+    for line in _clean(value).splitlines():
+        line = line.expandtabs(4)
+        # 清单续行的缩排属于容器，不能误当成四格缩排程式码。
+        quote_prefix = re.match(r"^(?: {0,3}> ?)*", line)[0]
+        content = line[len(quote_prefix):]
+        item = re.match(r"^ {0,3}(?:[-*+]|[0-9]{1,9}[.)]) +", content)
+        # 容器结束会自动结束其内的围栏；退回外层后须重新判断当前行。
+        if fence is not None and (
+                quote_prefix.count(">") < prefix.count(">")
+                or (list_indent and content.strip() and not content.startswith(" " * list_indent))):
+            fence = None
+            list_indent = 0
+        if fence is None:
+            if item:
+                list_indent = len(item[0])
+            elif content.strip() and not content.startswith(" " * list_indent):
+                list_indent = 0
+        candidate = line
+        if list_indent and content.startswith(" " * list_indent):
+            candidate = quote_prefix + content[list_indent:]
         if fence is not None:
             lines.append(line)
-            close = _FENCE_CLOSE.match(line)
-            if close and close[1][0] == fence[0] and len(close[1]) >= len(fence):
+            close = _FENCE_CLOSE.match(candidate)
+            if (close and close[1].count(">") == prefix.count(">")
+                    and close[2][0] == fence[0] and len(close[2]) >= len(fence)):
                 fence = None
             continue
-        opened = _FENCE_OPEN.match(line)
+        opened = _FENCE_OPEN.match(candidate)
         # CommonMark：反引号围栏的 info string 不能含反引号，否则不是围栏
-        if opened and not (opened[1][0] == "`" and "`" in opened[2]):
-            fence = opened[1]
+        if opened and not (opened[2][0] == "`" and "`" in opened[3]):
+            prefix, fence = line[:line.index(opened[2])], opened[2]
             lines.append(line)
+            outside.append("\n\n")  # 行内程式码不会跨越围栏区块
             continue
+        line = re.sub(r"^( {0,3})<", r"\1&lt;", line)
+        # 行中注解也可能隐藏下一行的闭合记号。
+        line = line.replace("<!--", "&lt;!--")
         line = _H1.sub(r"\1### ", line)
-        # Setext 一级标题降为二级，避免 Obsidian 识别为额外 H1。
-        line = re.sub(r"^\s{0,3}=+\s*$", "---", line)
+        # Setext 一级标题降为二级，保留引用及列表前缀。
+        line = _SETEXT.sub(r"\1---", line)
+        outside.append("" if content.startswith(" " * (list_indent + 4)) else line)
         lines.append(transform(line) if transform is not None else line)
     if fence is not None:  # 模型没闭合围栏：补上，免得吞掉后面所有段落
-        lines.append(fence)
-    return "\n".join(lines).strip()
+        lines.append(prefix + fence)
+    # 只统计围栏与配对的行内程式码之外的 Obsidian 注解／数学记号。
+    lines.extend(_unclosed("\n".join(outside)))
+    return "\n".join(lines).strip("\n")
 
 
 def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None = None) -> str:
@@ -166,7 +209,7 @@ def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None =
         fig = figures[id_]
         num, page, desc = _inline(fig.get("num")), _inline(fig.get("page")), _inline(selected["desc"])
         alt = re.sub(r"([\\\[\]])", r"\\\1", f"圖{num} {desc}")  # i18n-ok 固定繁体笔记格式
-        images[id_] = f"![{alt}](附圖/{quote(fig_files[id_], safe='')})\n圖{num}：{desc}（第 {page} 頁）"  # i18n-ok 固定繁体笔记格式
+        images[id_] = f"![{alt}](附圖/{quote(_clean(fig_files[id_]), safe='')})\n圖{num}：{desc}（第 {page} 頁）"  # i18n-ok 固定繁体笔记格式
     marks = []
     for mark in ctx.get("marks", []):
         # 原句与多行笔记均留在同一个引用内，防止页码或笔记变成外部段落。
@@ -174,7 +217,10 @@ def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None =
         if mark.get("page") is not None:
             entry += f"\n（第 {_inline(mark['page'])} 頁）"  # i18n-ok 固定繁体笔记格式
         if _string(mark.get("body")).strip():
-            entry += "\n筆記：" + _markdown(mark["body"])  # i18n-ok 固定繁体笔记格式
+            body = _markdown(mark["body"])
+            # 围栏必须独占一行；前置「笔记：」会使开围栏变成普通文字。
+            separator = "\n" if _FENCE_OPEN.match(body.split("\n", 1)[0]) else ""
+            entry += "\n筆記：" + separator + body  # i18n-ok 固定繁体笔记格式
         marks.append("\n".join("> " + line for line in entry.splitlines()))
 
     seen_figures, seen_marks = set(), set()
@@ -210,7 +256,7 @@ def render(ctx: dict, data: dict, fig_files: dict[str, str], today: str | None =
         parts.append("## " + heading + "\n\n" + text)
     for diagram in normalized["diagrams"]:
         if diagram["mermaid"]:
-            parts.append("**" + _inline(diagram["title"]) + "**\n\n```mermaid\n" + diagram["mermaid"] + "\n```")
+            parts.append("**" + _inline(diagram["title"]) + "**\n\n```mermaid\n" + _clean(diagram["mermaid"]) + "\n```")
     result = [sections["result"]] + [image for id_, image in images.items() if id_ not in seen_figures]
     parts.append("## 結果\n\n" + "\n\n".join(result))  # i18n-ok 固定繁体笔记格式
     other_marks = [mark for n, mark in enumerate(marks, 1) if n not in seen_marks]

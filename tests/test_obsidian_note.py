@@ -88,7 +88,7 @@ def test_render_yaml_escapes_quotes_and_newlines(ctx, data):
     ctx.update(authors=[value], source=value, year=value)
     data["tags"] = [value]
     header = obsidian_note.render(ctx, data, {}).split("---\n")[1]
-    quoted = json.dumps(value, ensure_ascii=False)
+    quoted = json.dumps(value.replace("\r", ""), ensure_ascii=False)
     assert f"source: {quoted}\n" in header
     assert f"year: {quoted}\n" in header
     assert header.count(f"  - {quoted}\n") == 2
@@ -311,3 +311,137 @@ def test_render_inline_expansion_does_not_create_second_h1(ctx, data, adjacent):
     assert re.findall(r'^# .*$', md, re.M) == ['# 論文標題']
     assert not _open_fence_at_end(md)
     assert md.endswith('### 我的想法\n\n')
+
+
+@pytest.mark.parametrize('html', ['<!-- x', '<pre>', '<script>', '<?php', '<![CDATA[', '<div>'])
+def test_harden_html_block_line_is_escaped(html):
+    assert obsidian_note._markdown('   ' + html) == '   &lt;' + html[1:]
+    code = '```\n' + html + '\n```'
+    assert obsidian_note._markdown(code) == code
+
+
+@pytest.mark.parametrize('indent', ['\t', '\u3000', '\u00a0'])
+def test_harden_tab_and_fullwidth_space_not_fence(indent):
+    assert obsidian_note._markdown(indent + '```\n# evil').endswith('### evil')
+
+
+def test_harden_leading_indent_not_stripped():
+    assert obsidian_note._markdown('\n    ```x\n# evil\n') == '    ```x\n### evil'
+
+
+def test_harden_unbalanced_percent_percent_is_closed():
+    assert obsidian_note._markdown('%% hidden') == '%% hidden\n%%'
+
+
+@pytest.mark.parametrize('token', ['%%', '$$'])
+def test_harden_balanced_delimiters_and_code_kept(token):
+    for text in (token + 'x' + token, token + '\nx\n' + token,
+                 '`' + token + '`', '``x `' + token + '``',
+                 '```\n# ' + token + '\n{{mark:1}}\n```'):
+        assert obsidian_note._markdown(text) == text
+
+
+def test_harden_unbalanced_dollar_dollar_is_closed_but_balanced_kept():
+    assert obsidian_note._markdown('$$\nx') == '$$\nx\n$$'
+    assert obsidian_note._markdown('$$x$$') == '$$x$$'
+
+
+@pytest.mark.parametrize('prefix', ['> ', '> > ', '- ', '10. ', '    '])
+def test_harden_setext_in_quote_demoted(prefix):
+    assert obsidian_note._markdown(prefix + 'foo\n' + prefix + '===') == prefix + 'foo\n' + prefix + '---'
+
+
+@pytest.mark.parametrize('marker', ['-', '10.'])
+def test_harden_deep_indented_h1_in_list_demoted(marker):
+    assert obsidian_note._markdown(marker + ' foo\n\n    # deep').endswith('    ### deep')
+
+
+@pytest.mark.parametrize('field', ['quote', 'body'])
+@pytest.mark.parametrize('token', ['%%', '$$'])
+def test_harden_quote_with_single_percent_percent_closed(ctx, field, token):
+    ctx['marks'] = [{'quote': 'quote', 'body': '', field: token + ' text'}]
+    md = obsidian_note.render(ctx, {}, {})
+    assert '> ' + token + '\n\n## 限制' in md
+
+
+def test_harden_control_and_surrogate_chars_removed(ctx, data):
+    bad = ''.join(chr(n) for n in range(160) if n < 32 and n not in (9, 10) or 127 <= n <= 159)
+    bad += '\ud800\udfff\ufffe\uffff'
+    value = 'keep' + bad + 'text'
+    ctx.update(title=value, authors=[value], source=value, year=value,
+               marks=[{'quote': value, 'body': value, 'page': value}])
+    ctx['figures'][0].update(num=value, page=value)
+    data.update({key: value for key in ('hook', 'short', 'problem', 'method', 'result', 'limits')})
+    data.update(tags=[value], diagrams=[{'title': value, 'mermaid': value}])
+    data['figures'][0]['desc'] = value
+    md = obsidian_note.render(ctx, data, {'fig-a': value + '.png'}, today=value)
+    md.encode('utf-8')
+    assert all(char not in md for char in bad)
+    assert 'keeptext' in md
+    assert obsidian_note._yaml(value) == '"keeptext"'
+    assert obsidian_note._inline(value) == 'keeptext'
+    assert obsidian_note._markdown(value) == 'keeptext'
+
+
+@pytest.mark.parametrize('token', ['%%', '$$'])
+def test_harden_inline_delimiters_closed(ctx, data, token):
+    ctx['title'] = token
+    data['diagrams'][0]['title'] = token
+    data['figures'][0]['desc'] = token
+    md = obsidian_note.render(ctx, data, {'fig-a': 'a.png'})
+    assert '# ' + token + ' ' + token + '\n' in md
+    assert '**' + token + ' ' + token + '**' in md
+    assert '圖2：' + token + ' ' + token + '（' in md
+
+
+def test_harden_mark_body_initial_fence_remains_real(ctx):
+    ctx['marks'] = [{'quote': 'quote', 'body': '```\n\n- foo\n\n    # deep\n```'}]
+    md = obsidian_note.render(ctx, {}, {})
+    assert '> 筆記：\n> ```\n' in md
+
+
+def test_harden_indented_code_delimiters_not_counted():
+    text = '    ``` $$\ntext'
+    assert obsidian_note._markdown(text) == text
+
+
+def test_harden_quote_fence_delimiters_not_counted():
+    text = '> ```\n> $$ %%\n> ```'
+    assert obsidian_note._markdown(text) == text
+
+
+def test_harden_inline_html_comment_cannot_hide_delimiters():
+    assert '<!--' not in obsidian_note._markdown('\ufeff <!--\n%%-->')
+
+
+@pytest.mark.parametrize('token', ['%%', '$$'])
+def test_harden_delimiters_in_list_continuation_closed(token):
+    text = '- foo\n\n    # deep ' + token
+    assert obsidian_note._markdown(text).endswith('\n' + token)
+
+
+def test_harden_list_continuation_fence_closed_before_delimiter():
+    text = 'text$$\n1. item\n\n    ```'
+    cleaned = obsidian_note._markdown(text)
+    assert cleaned.endswith('    ```\n    ```\n$$')
+
+
+def test_harden_list_fence_ends_with_container():
+    text = '- item\n\n    ```\n---\n\n- foo\n\n    # deep'
+    assert obsidian_note._markdown(text).endswith('    ### deep')
+    text = '- item\n\n    ```\n```'
+    assert obsidian_note._markdown(text).endswith('\n```\n```')
+
+
+def test_harden_mermaid_cleaned_before_fence_filter(ctx):
+    md = obsidian_note.render(ctx, {'diagrams': [{'mermaid': '\x00```\n# x\n\ud800```'}]}, {})
+    assert '```mermaid\n# x\n```' in md
+
+
+def test_harden_inline_code_does_not_cross_blank_lines():
+    assert obsidian_note._markdown('`\n\n$$\n\n`').endswith('\n$$')
+
+
+def test_harden_quoted_fence_inside_plain_code_is_not_closer():
+    text = '```\n> ```\n# code\n%% $$ {{mark:1}}\n```'
+    assert obsidian_note._markdown(text) == text
