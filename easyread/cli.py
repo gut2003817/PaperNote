@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import threading
 import urllib.request
@@ -57,13 +58,22 @@ def running_server() -> str | None:
         return None
 
 
+def server_token(url: str) -> str:
+    """寫入令牌只放在頁面 HTML 的 <meta name="easyread-token">（JSON 接口不再回傳），從首頁解析出來。"""
+    page = urllib.request.urlopen(url + "/", timeout=5).read().decode("utf-8", "replace")
+    m = re.search(r'<meta name="easyread-token" content="([0-9a-f]+)">', page)
+    if not m:
+        raise OSError("token not found")
+    return m.group(1)
+
+
 def cmd_serve(a):
     url = None if (a.port is not None or config.temp_library()) else running_server()
     if url:
         out(f"服务已在运行：{url}")
         if not a.exit_on_close:  # 要常驻的服务：那个服务若是 start.cmd 起的、关页会退出，让它改成常驻
             try:
-                token = json.loads(urllib.request.urlopen(url + "/api/library").read())["token"]
+                token = server_token(url)
                 urllib.request.urlopen(urllib.request.Request(url + "/api/presence/keep", data=b"{}", headers={"X-Token": token}))
             except Exception:  # noqa: BLE001
                 pass
@@ -105,7 +115,7 @@ def cmd_translate(a):
     pages = paperdata.parse_pages(a.pages) if a.pages else None
     if url:
         try:
-            token = json.loads(urllib.request.urlopen(url + "/api/library").read())["token"]
+            token = server_token(url)
             req = urllib.request.Request(f"{url}/api/p/{ws.id}/translate", data=json.dumps({"pages": pages}).encode(),
                                          headers={"X-Token": token, "Content-Type": "application/json"})
             urllib.request.urlopen(req)

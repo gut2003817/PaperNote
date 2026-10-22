@@ -6,6 +6,19 @@ window.PR = window.PR || {};
   PR.$ = (sel, root) => (root || document).querySelector(sel);
   PR.$$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
+  /* 寫入令牌：伺服器只把它放在頁面 HTML 的 <meta name="easyread-token">，JSON 接口不再回傳。
+     服務重啟後令牌會換：重新取一次頁面 HTML（同源才讀得到）解析出新令牌。離線單檔版沒有這個 meta。 */
+  const TOKEN_RE = /<meta name="easyread-token" content="([0-9a-f]+)">/;
+  PR.token = (document.querySelector('meta[name="easyread-token"]') || {}).content || PR.token || "";
+  PR.refreshToken = async function () {
+    if (location.protocol === "file:") return PR.token;
+    try {
+      const m = TOKEN_RE.exec(await (await fetch("/", { cache: "no-store" })).text());
+      if (m) PR.token = m[1];
+    } catch (e) { /* 下次重試 */ }
+    return PR.token;
+  };
+
   PR.el = function (tag, attrs, html) {
     const e = document.createElement(tag);
     if (attrs) for (const [k, v] of Object.entries(attrs)) {
@@ -193,6 +206,10 @@ window.PR = window.PR || {};
     if (opts.method && opts.method !== "GET") headers["X-Token"] = PR.token || "";
     const r = await fetch(path, { method: opts.method || "GET", headers, body, cache: "no-store" });
     const data = await r.json().catch(() => ({}));
+    if (r.status === 403 && data.error === "bad token" && !opts._retried) {  // 服務重啟過、令牌換了：取新令牌重送一次
+      await PR.refreshToken();
+      return PR.api(path, Object.assign({}, opts, { _retried: true }));
+    }
     if (!r.ok) throw new Error(data.error || PR.t("请求失败 {status}", { status: r.status }));
     return data;
   };

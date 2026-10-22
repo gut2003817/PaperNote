@@ -140,11 +140,29 @@ function backendJson(endpoint, token) {
   });
 }
 
+// 寫入令牌只放在頁面 HTML 的 <meta name="easyread-token">，JSON 接口不再回傳。
+function backendToken() {
+  return new Promise((resolve, reject) => {
+    const req = http.request(new URL("/", backendUrl), { method: "GET" }, res => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", part => { body += part; });
+      res.on("end", () => {
+        const m = /<meta name="easyread-token" content="([0-9a-f]+)">/.exec(body);
+        if (res.statusCode !== 200 || !m) return reject(new Error(`HTTP ${res.statusCode}`));
+        resolve(m[1]);
+      });
+    });
+    req.setTimeout(8000, () => req.destroy(new Error(say("后端关闭超时，请稍后重试", "後端關閉逾時，請稍後重試", "Backend shutdown timed out. Try again later."))));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 async function stopBackendGracefully() {
   const child = backend;
   if (!child) return;
-  const info = await backendJson("/api/library");
-  await backendJson("/api/shutdown", info.token);
+  await backendJson("/api/shutdown", await backendToken());
   // 后端清掉占用标记、关闭 HTTP 服务后才启动新进程。
   if (backend !== child) return;
   await new Promise((resolve, reject) => {

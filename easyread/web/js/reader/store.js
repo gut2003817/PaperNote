@@ -108,7 +108,7 @@
   PR.flush = flush;
 
   async function reloadToken() {
-    try { PR.token = (await (await fetch(base() + "/state", { cache: "no-store" })).json()).token; } catch (e) { /* 下次重试 */ }
+    await PR.refreshToken();  // 令牌只在頁面 HTML 裡，/state 不再回傳
   }
 
   /* ---------- 载入 ---------- */
@@ -125,7 +125,6 @@
       const r = await fetch(base() + "/state", { cache: "no-store" });
       if (!r.ok) throw new Error(r.status === 404 ? PR.t("文献库里没有这篇论文") : PR.t("读取数据失败：{status}", { status: r.status }));
       const d = await r.json();
-      PR.token = d.token;
       Object.assign(S, { paper: d.paper, discussion: d.discussion, layout: d.layout || {}, item: d.item || {}, job: d.job || {}, versions: d.versions, engine: d.engine });
       serverReader = d.reader || {};
     }

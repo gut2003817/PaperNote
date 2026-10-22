@@ -41,7 +41,6 @@
   L.load = async function () { apply(await PR.api("/api/library")); };
   function apply(d) {
     L.lastData = d;  // 切换界面语言前存一份，刷新后先拿它画列表，不闪空白（lang-toggle.js）
-    PR.token = d.token;
     L.engine = d.engine;
     L.engineLabel = d.engine_label;
     L.firstRun = d.first_run;

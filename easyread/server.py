@@ -1,6 +1,7 @@
 """本地服务：只监听 127.0.0.1。文献库页、阅读页、数据接口、导入、后台任务。"""
 from __future__ import annotations
 
+import hmac
 import io
 import json
 import mimetypes
@@ -122,7 +123,11 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _page(self, path: Path):
-        self._send(200, i18n.inject(path.read_text(encoding="utf-8")).encode("utf-8"), "text/html; charset=utf-8")
+        # 寫入令牌只放在頁面 HTML 的 <meta> 裡，不再出現在任何 JSON 接口回應中（見 docs/security-hardening-2026-10-22.md）。
+        # 令牌是 hex，不需跳脫；跨來源網頁讀不到同源 HTML（瀏覽器同源政策，且本服務不送 CORS 標頭）。
+        page = i18n.inject(path.read_text(encoding="utf-8"))
+        page = page.replace("<head>", f'<head>\n<meta name="easyread-token" content="{self.app.token}">', 1)
+        self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def _download(self, body: bytes, filename: str, ctype: str):
         self.send_response(200)
@@ -325,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, location)
         if path == "/api/library":
             cfg = config.load()
-            return self._json(200, {"items": lib.list(), "token": app.token, "jobs": app.jobs.small_status(),
+            return self._json(200, {"items": lib.list(), "jobs": app.jobs.small_status(),
                                     "library_status": app.location.status, "other_device": app.location.marker.other_device(),
                                     "engine": cfg.get("engine"), "engine_label": cli_models.engine_label(cfg),
                                     "first_run": config.is_first_run(), "version": __version__, "trash": len(trash.items(lib.root))})
@@ -362,7 +367,7 @@ class Handler(BaseHTTPRequestHandler):
                     _warm(ws.root, app.location)
                     _refresh_layout(ws)
                 state = {**{n: ws.load(n) for n in ("paper", "discussion", "reader", "layout", "item", "job")},
-                         "versions": ws.versions(), "token": app.token, "id": ws.id, "library_status": app.location.status,
+                         "versions": ws.versions(), "id": ws.id, "library_status": app.location.status,
                          "engine": config.load().get("engine")}
                 # 旧论文的图按定位框补截图；等内容和版本号都取完再开始，页面轮询到 paper 变了就会重画
                 if app.location.status == "idle" and (state["job"] or {}).get("state") not in ("queued", "running"):
@@ -400,8 +405,9 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------- POST ----------
     def do_POST(self):
-        if self.headers.get("X-Token") != self.app.token:  # 挡住别的网页跨站写
-            return self._json(403, {"error": "bad token"})
+        if not hmac.compare_digest(self.headers.get("X-Token") or "", self.app.token):  # 挡住别的网页跨站写
+            # 沒讀請求體就回 403：要關掉連線，否則殘留的請求體會被當成下一個請求（keep-alive 下回 501）
+            return self._reject("bad token")
         try:
             with self.app.location.request("POST", self.path):
                 self._post()
