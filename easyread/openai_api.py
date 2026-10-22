@@ -55,6 +55,8 @@ def _headers(o: dict, stream: bool = False) -> dict:
     if stream:
         h["Accept"] = "text/event-stream"
     if o.get("api_key"):
+        if not key_guard.use_ok(o):  # 已存的 Key 只送往认可的地址（key_guard.py），送出前最后再挡一次
+            raise EngineError(key_guard.use_refused_message())
         h["Authorization"] = "Bearer " + o["api_key"]
     return h
 

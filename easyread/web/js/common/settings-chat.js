@@ -179,6 +179,8 @@
     if (api && p && p.key && !PR.apiHasKey(s, f.preset) && !typed) { PR.toast(PR.t("这家要填 API Key")); return false; }
     if (api && typed) (s.chatKeys = s.chatKeys || {})[f.preset] = typed;
     const m = toModel(s, f, p);
+    // 後端只把剛輸入的 Key 授權給這張卡片的地址（key_guard.py）：記下 Key 是在哪個地址輸入的
+    if (api && typed) (s.chatKeyUrls = s.chatKeyUrls || {})[f.preset] = m.base_url || "";
     if (s.editing === "new") list.push(Object.assign(m, { id: "m" + Date.now().toString(36) }));
     else {
       const old = list.find((x) => x.id === s.editing), wasTr = sameAsTranslation(s, old);

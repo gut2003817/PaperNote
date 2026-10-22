@@ -153,7 +153,7 @@ function backendToken() {
         resolve(m[1]);
       });
     });
-    req.setTimeout(8000, () => req.destroy(new Error(say("后端关闭超时，请稍后重试", "後端關閉逾時，請稍後重試", "Backend shutdown timed out. Try again later."))));
+    req.setTimeout(8000, () => req.destroy(new Error(say("读取后端令牌超时，请稍后重试", "讀取後端令牌逾時，請稍後重試", "Timed out reading the backend token. Try again later."))));
     req.on("error", reject);
     req.end();
   });

@@ -165,19 +165,30 @@ def _copy_verified(src: Path, dst: Path):
     return before
 
 
-def _check_owner(dst: Path) -> None:
-    """目標（不存在時取最近一個已存在的上層目錄）必須屬於目前使用者（POSIX）。
-    擋住拿到寫入令牌的其他帳號／程式把文獻庫搬到 /tmp、/Users/Shared、別的帳號或他預先建好的目錄
-    （之後的論文都會寫到他讀得到的地方，或切換成他準備的文獻庫）。Windows 沒有 getuid，不檢查。"""
+def _check_owner(dst: Path, mode: str = "copy") -> None:
+    """目標（不存在時取最近一個已存在的上層目錄）必須屬於目前使用者、且群組與其他人不可寫（POSIX）。
+    擋住拿到寫入令牌的其他帳號／程式把文獻庫搬到 /tmp、/Users/Shared、別的帳號、或別人可寫的目錄
+    （之後的論文都會寫到他讀得到、改得到的地方）。use / merge 會直接採用目標裡已有的內容：裡面每個檔案與資料夾也都必須屬於目前使用者。
+    Windows 沒有 getuid，不檢查。"""
     if not hasattr(os, "getuid"):
         return
+    uid = os.getuid()
     p = dst
     while not p.exists():
         if p == p.parent:
             return  # 整條路徑都不存在：交給 inspect 報“路径不存在”
         p = p.parent
-    if p.stat().st_uid != os.getuid():
+    st = p.stat()
+    if st.st_uid != uid:
         raise ValueError(tr("目标文件夹不属于当前用户，不能把文献库放在这里：{path}", path=str(p)))
+    if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise ValueError(tr("目标文件夹其他用户也能写入，不能把文献库放在这里：{path}", path=str(p)))
+    if mode in ("use", "merge") and p == dst:
+        for folder, dirs, files in os.walk(dst):  # 不跟随符号链接
+            for name in dirs + files:
+                q = Path(folder) / name
+                if q.lstat().st_uid != uid:
+                    raise ValueError(tr("目标文献库里有不属于当前用户的文件，不能使用或合并：{path}", path=str(q)))
 
 
 def move(src: str | Path, dst: str | Path, mode: str) -> dict:
@@ -191,7 +202,7 @@ def move(src: str | Path, dst: str | Path, mode: str) -> dict:
     if any(src == target or src.is_relative_to(target) or target.is_relative_to(src)
            for target in (requested, dst)):
         raise ValueError(tr("新旧文献库不能相同，也不能互相包含"))
-    _check_owner(dst)
+    _check_owner(dst, mode)
     state = inspect(dst, exact=True)
     if not state["writable"]:
         raise ValueError(tr("目标文件夹不可写"))

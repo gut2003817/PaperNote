@@ -55,6 +55,12 @@ def is_first_run() -> bool:
 
 def _saved() -> dict:
     raw = read_json(CONFIG_PATH, {}) or {}
+    if raw and not (isinstance(raw.get("openai"), dict) and raw["openai"].get("key_origins_v")):
+        # 升級前的設定：把當時已授權的 Key 地址記進 openai.key_origins（見 key_guard.migrate）。
+        # 讀取時只在記憶體裡算、不改寫檔案；下一次 save 會連同 key_origins_v 一起寫回，之後就不再從磁碟推導。
+        # 磁碟上的設定只會經由 save 改變，所以在第一次 save 之前算出來的結果都等於升級當下的狀態。
+        from . import key_guard
+        raw = key_guard.migrate(raw)
     if raw.get("concurrency_v") != 2 and raw.get("concurrency") == 1:
         # 以前默认 1，而且切到本机 CLI 时设置页会强制改回 1，旧配置里的 1 多半不是自己选的：当成自动。
         # 存过一次之后带上 concurrency_v，再选 1 就是真的要一段一段译
@@ -79,6 +85,7 @@ def temp_library() -> bool:
 
 def save(patch: dict) -> dict:
     cfg = _merge(_merge(DEFAULTS, _saved()), patch)
+    cfg["openai"]["key_origins_v"] = 1  # 新設定檔不需要遷移（key_guard.migrate）
     write_json_atomic(CONFIG_PATH, cfg)
     return load()
 

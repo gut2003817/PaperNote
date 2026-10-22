@@ -17,7 +17,7 @@
     const [d, chat] = await Promise.all([PR.api("/api/config"), PR.api("/api/chat/models").catch(() => null)]);
     Object.assign(st, { tab: typeof tab === "string" && tab !== "engine" ? tab : "chat", cfg: d.config, presets: d.presets, groups: d.groups || [], chat,
       fetchMsg: null, apiTyping: false, advOpen: false, ui: { features: Object.assign({}, PR.features), keys_on: PR.keysOn, keys: Object.assign({}, PR.keymap) },
-      theme: PR.ls.get("easyread-prefs", {}).theme || "auto", recording: null, editing: null, form: null, chatKeys: null, type: null, transChecked: false, pinned: false, pal: null, palMode: null, obsidian: null });
+      theme: PR.ls.get("easyread-prefs", {}).theme || "auto", recording: null, editing: null, form: null, chatKeys: null, chatKeyUrls: null, type: null, transChecked: false, pinned: false, pal: null, palMode: null, obsidian: null });
     if (PR.palette) PR.palette.endPreview();
     render();
     dlg().classList.add("open");
@@ -64,7 +64,7 @@
   let modelSaveQueue = Promise.resolve();
   PR.saveModelSettings = function () {
     const config = JSON.parse(JSON.stringify(PR.settingsTabs.engine.collect(st)));
-    const chat = JSON.parse(JSON.stringify({ models: st.chat.models, default: st.chat.default, keys: st.chatKeys || {} }));
+    const chat = JSON.parse(JSON.stringify({ models: st.chat.models, default: st.chat.default, keys: st.chatKeys || {}, key_urls: st.chatKeyUrls || {} }));
     const revision = ++saveRevision;
     setSaveStatus("saving", PR.t("正在保存…"));
     modelSaveQueue = modelSaveQueue.then(async () => {
@@ -87,7 +87,7 @@
     if (st.obsidian != null && st.obsidian.trim() !== (st.cfg.obsidian_vault || "")) body.obsidian_vault = st.obsidian.trim();  // 和其它设置同一个请求：后端验证不过就整个不存
     const r = await PR.api("/api/config", { method: "POST", body });
     st.cfg = r.config; st.obsidian = null;
-    if (st.chat) st.chat = await PR.api("/api/chat/models", { method: "POST", body: { models: st.chat.models, default: st.chat.default, keys: st.chatKeys || {} } });
+    if (st.chat) st.chat = await PR.api("/api/chat/models", { method: "POST", body: { models: st.chat.models, default: st.chat.default, keys: st.chatKeys || {}, key_urls: st.chatKeyUrls || {} } });
     PR.applyUi(st.ui, true);
     PR.ls.set("easyread-auto-translate", !!st.cfg.auto_translate);
     const prefs = PR.ls.get("easyread-prefs", {});

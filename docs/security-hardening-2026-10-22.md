@@ -32,33 +32,39 @@
 
 API Key 是 GET 拿不到的（`config.public` 只露後四位），所以這是對方**從「能讀論文」升級到「偷走付費 Key」**的路徑，是三項裡最實際的風險。
 
-### 修法（`easyread/key_guard.py`，接在 `settings_api.py`）
+### 修法（`easyread/key_guard.py`，接在 `settings_api.py`、`chat_models.py`、`openai_api.py`）
 不禁止自訂 `base_url`（OpenAI 相容服務、中轉站是合法功能），改成**把已存的 Key 綁定到地址**：
 
-- 某服務商（preset）已存的 Key 只會送往這些來源（`scheme://host:port`）：
+- 某服務商（preset）已存的 Key 只會送往兩種來源（`scheme://host:port`）：
   1. 該 preset 內建的官方地址；
-  2. 使用者**親手輸入這把 Key 時一起填的地址**（記在 `openai.key_origins[preset]`）；
-  3. 升級前已存在設定檔裡的地址（翻譯設定那個 preset 的 `base_url`、名單裡同 preset 的卡片），免得舊使用者升級後要重填。
-- 要把已存的 Key 用到新地址：**在同一次儲存裡重新輸入一次 Key**。能輸入 Key 的人本來就知道 Key，攻擊者不知道，所以重新輸入本身就是確認。
-- 不合格就整個拒絕、不寫盤，錯誤訊息：「介面地址改了：為了不把已存的 API Key 送到新地址，請重新輸入一次 API Key」。
-- `/api/models/list` 用已存 Key 時也走同一個檢查；不合格回 `{"ok": false, …}`，**不發出任何請求**。
+  2. `openai.key_origins[preset]`：使用者**在同一個請求裡親手輸入這把 Key 時一起填的地址**。
+     翻譯設定是那次請求的 `base_url`；「問 AI」卡片是前端一起送來的 `key_urls[preset]`（輸入 Key 的那張卡片的地址），**不會順帶授權名單上原有的其他卡片**。
+  輸入的是**新的** Key 時整組取代、舊授權作廢（例如攻擊者先用他自己的 Key 授權過 evil）；輸入的就是已存的那把 Key 時加進原有授權（設定頁每次儲存都會重送剛輸入的 Key；能輸入這把 Key 的人本來就能授權任何地址）。
+- **升級遷移只做一次**：舊設定檔（沒有 `openai.key_origins_v`）載入時，把「當時已有 Key 的 preset」的翻譯 `base_url` 與同 preset 的自訂卡片記進 `key_origins`。讀取時只在記憶體裡算、不改寫檔案；下一次儲存連同 `key_origins_v` 寫回，之後**不再從磁碟上的卡片或 base_url 推導**。磁碟上的設定只會經由儲存改變，所以第一次儲存前算出來的結果就等於升級當下的狀態。
+- **存設定時檢查**（不合格整個拒絕、不寫盤）：
+  - `/api/config`：頂層欄位改成白名單加型別檢查（`engine`、`auto_translate`、`target`、`obsidian_vault`、`check_updates`、`batch_pages`、`page_cap`、`concurrency`、`claude`、`codex`、`openai`、`chat`），`openai` 底下也是白名單（`key_origins`、`key_origins_v`、`keys` 不能從請求寫入）；**`chat` 和 `/api/chat/models` 走同一套卡片檢查**（第一輪漏了這條路，審查者重現：從 `/api/config` 帶 `chat` 就能加 evil 卡片，連帶讓 `openai.base_url=evil` 被接受）。
+  - 新加或改了地址的卡片：已存 Key 必須認可這個地址；沒改的舊卡片不擋儲存（用的時候擋）。
+- **送出時再檢查**（防「先埋卡片、後填 Key」）：`chat_models.engine_cfg` 和 `openai_api._headers` 在要附上已存 Key 時呼叫 `key_guard.use_ok`，地址不在授權裡就丟出錯誤「這個介面地址沒有被認可使用已存的 API Key：請在設定裡為它重新輸入一次 API Key」，**不發出請求**。`/api/models/list` 剛輸入的 Key 標記 `_typed_key`，送哪裡由輸入的人決定。
 - `base_url` 只接受 `http://` / `https://`：存設定時檢查，`openai_api._base()` / `models()` 實際送出前再檢查一次。
-- `key_origins` 不能由請求直接寫入。
-- 切換 preset 時，若舊 preset 有 Key 但還沒記地址，就把當時的地址補記下來，切走再切回不用重填。
 
 ### 取捨
-- **沒有強制只用 https**：使用者可能在區網用 `http://192.168.x.x` 自架 vLLM / Ollama 並帶 Key；強制 https 會破壞這種合法用法。綁定地址已經擋住「默默換地址」，http 被竊聽是另一個問題，不在這次範圍。
+- **沒有強制只用 https**：使用者可能在區網用 `http://192.168.x.x` 自架服務並帶 Key；強制 https 會破壞合法用法。
 - **沒有做「改地址時跳確認框」**：確認框是前端的，攻擊者直接打 API 就繞過了。只有「重新輸入 Key」是攻擊者做不到的確認。
-- 使用者體驗的代價：編輯既有自訂卡片的地址時，要在同一個表單重新貼一次 Key。前端不需改動，後端錯誤會照常以「保存失敗：…」吐司顯示。
+- 使用者體驗的代價：
+  - 編輯既有自訂卡片的地址時，要在同一個表單重新貼一次 Key。後端錯誤會照常以「保存失敗：…」吐司顯示。
+  - 換一把**新** Key 時，同一家服務商其他自訂地址的卡片會失去授權，要在那些卡片裡再輸入一次。
+- 前端唯一的改動：`settings-chat.js` 記下 Key 是在哪個地址的卡片輸入的（`chatKeyUrls`），`settings.js` 存名單時一起送 `key_urls`。
 
-### 測試（`tests/test_security_hardening.py::BaseUrlKeyTest`）
-- 只改 base_url（含 `api.deepseek.com.evil.example`、換埠號、不帶 api_key 欄位）→ 拒絕，且 config.json 一字不變。
-- 重新輸入 Key 的自訂地址 → 可存；之後同地址加打碼 Key → 可存。
-- 官方 preset 互換 → 照常可用。
-- `file://`、`ftp://`、`javascript:` → 拒絕；`_base()` / `models()` 也拒絕。
-- 舊版設定（自訂地址 + Key、沒有 key_origins）→ 原地址照常可存、切走再切回可存、改成 evil 被拒。
-- 「問 AI」卡片：evil 地址 + 打碼 Key 被拒；同次重新輸入 Key 則可存；沒有自訂地址的卡片不受影響。
-- `/api/models/list`：evil 地址 + 打碼 Key 不呼叫 `openai_api.models`；官方地址用已存 Key；新地址用剛輸入的 Key。
+### 測試（`tests/test_security_hardening.py::BaseUrlKeyTest`、`TokenTest::test_http_config_patch_with_chat_refused`）
+- 只改 base_url（含 `api.deepseek.com.evil.example`、換埠號、不帶 api_key 欄位）→ 拒絕，config.json 一字不變。
+- **審查重現 1**：`save_config({"chat": {...evil 卡片}})` 被拒、接著 `openai.base_url=evil` 也被拒；另走真正的 HTTP `/api/config` 重現一次，回 400。
+- **審查重現 2（先埋後填）**：先替沒 Key 的智譜埋 evil 卡片 → 使用者在翻譯設定輸入智譜 Key → `engine_cfg(evil)` 與 `_headers` 都丟 EngineError；使用者在自己的代理卡片輸入同一把 Key → 只授權那張卡片，evil 仍被拒。
+- 直接寫進磁碟（繞過儲存檢查）的 evil base_url / 卡片：送出時仍被擋；官方地址照常帶 Key。
+- 攻擊者用自己的 Key 授權 evil，之後使用者輸入新 Key → evil 授權作廢。
+- 同一把 Key 先在卡片 U 輸入、再隨翻譯設定 T 重送 → U、T 都可用。
+- 舊設定遷移：載入不改寫檔案；當時有 Key 的 preset 地址被遷移，沒 Key 的不遷移；第一次儲存寫入 `key_origins_v`。
+- 白名單：未知頂層欄位、`port`、錯誤型別、`engine: "evil"`、`openai.key_origins_v`、`openai.keys` 都被拒。
+- 其他：自訂地址可在重新輸入 Key 後存；`file://` 等被拒；`/api/models/list` 不把已存 Key 送往新地址。
 
 ## 2. `/api/library/move` 可把文獻庫搬到任意目錄
 
@@ -66,19 +72,23 @@ API Key 是 GET 拿不到的（`config.public` 只露後四位），所以這是
 拿到令牌的其他帳號 / 沙箱程式可以把文獻庫「複製」到 `/tmp/x`、`/Users/Shared/x` 或它自己預先建好的目錄（重啟後新論文都寫到那裡，它讀得到），或用 `use` / `merge` 換成它準備好的文獻庫（內容注入）。實際影響要等重啟才生效，而且同一群攻擊者本來就能用 GET 讀論文，所以這項的**增量風險中等**：主要是「持續外洩」和「換成攻擊者的文獻庫」。
 
 ### 修法（`easyread/cloudlib.py::_check_owner`，在 `move()` 裡、`inspect()` 之前）
-POSIX 上，目標目錄（不存在時取最近一個已存在的上層目錄）**必須屬於目前使用者**（`st_uid == os.getuid()`）。
-- `/tmp/新目錄` → 最近的已存在目錄是 `/private/tmp`（root）→ 拒絕。
-- `/Users/Shared/…`（root）、其他帳號的目錄、攻擊者帳號預先建好的目錄 → 拒絕。
-- 自己家目錄下、網盤同步資料夾（`~/Library/CloudStorage/…`、`~/Dropbox`）、自己掛載的外接碟 → 照常。
+POSIX 上**擋住屬於他人或他人可寫的目錄**：
+- 目標目錄（不存在時取最近一個已存在的上層目錄）必須屬於目前使用者（`st_uid == os.getuid()`），而且群組與其他人都不可寫（沒有 `S_IWGRP`、`S_IWOTH`）。
+  - `/tmp/新目錄`、`/Users/Shared/…`（root 所有、sticky 全員可寫）→ 拒絕。
+  - 其他帳號的目錄、攻擊者帳號預先建好的目錄、權限 770 / 707 / 777 的目錄 → 拒絕。
+- `use` / `merge` 會直接採用目標裡已有的內容：目標裡每個檔案與資料夾（不跟隨符號連結）也都必須屬於目前使用者。
+- 自己家目錄下、網盤同步資料夾（`~/Library/CloudStorage/…`、`~/Dropbox`）照常。
 
 ### 取捨與部分修補的理由
-- 只修了一部分：**同一個 uid 的沙箱程式**把目標設成它自己容器內的目錄（例如 `~/Library/Containers/<它>/…`，也屬於你）擋不住。要真正擋住，需要「目標必須由使用者在原生選資料夾視窗選出」之類只有人能完成的確認；但 Electron 版是在 renderer 選資料夾、瀏覽器版在選不出時讓人手打路徑，伺服器分不出是人選的還是程式送的，改這個會牽動前端流程，不符合「最小修改」，列為殘留風險。
-- 沒有加「上層目錄不可是 world-writable」的檢查：FAT/exFAT 外接碟在 macOS 常顯示為 `drwxrwxrwx`，會誤擋合法用法。
+- **同一個 uid 的沙箱程式**把目標設成它自己容器內的目錄（例如 `~/Library/Containers/<它>/…`，屬於你、權限也正常）擋不住。要真正擋住，需要「目標必須由使用者在原生選資料夾視窗選出」之類只有人能完成的確認；但 Electron 版在 renderer 選資料夾、瀏覽器版在選不出時讓人手打路徑，伺服器分不出是人選的還是程式送的，改這個會牽動前端流程，不符合「最小修改」，列為殘留風險。
+- **會誤擋的合法情況**：FAT/exFAT 外接碟在 macOS 常顯示為 `drwxrwxrwx`，現在會被當成「他人可寫」而拒絕；要放在外接碟，請用 APFS / HFS+ 格式，或在碟上建一個權限 755 的資料夾。
 - Windows 沒有 `getuid`，不檢查。
 
 ### 測試（`LibraryMoveOwnerTest`）
 - 模擬目錄屬於別的帳號（patch `getuid`）→ 拒絕，目標沒被建立，`library_dir` 不變，狀態回到 idle。
 - 搬到 `/tmp/easyread-attack-…` → 拒絕。
+- 權限 770、707、777 的目錄 → 拒絕。
+- `use` 一個裡面有他人擁有檔案的文獻庫（patch `lstat` 模擬）→ 拒絕；全是自己的檔案 → 照常可用。
 - 搬到自己的目錄 → 照常成功、論文檔案有複製過去。
 
 ## 3. 寫入令牌由 GET 的 JSON 回傳
@@ -111,8 +121,21 @@ cookie 也要靠某個 GET 回應發下來，本機程式一樣拿得到，效�
 
 ### pytest
 - 改動前（main `bc66b79`）：`567 passed, 1 skipped, 701 subtests passed`
-- 改動後：`586 passed, 1 skipped, 701 subtests passed`（新增 19 個測試）
-- 變異檢查：把 `may_send` 改成永遠 True → 5 個新測試失敗；拿掉 `_check_owner` → 2 個失敗；令牌放回 JSON → 1 個失敗；403 不關連線 → 1 個失敗。
+- 第一輪後：`586 passed, 1 skipped, 701 subtests passed`
+- 第二輪（審查後修正）後：`595 passed, 1 skipped, 710 subtests passed`
+- 變異檢查（拿掉一道防護就有新測試失敗）：
+  - 第一輪：`may_send` 永遠 True、拿掉 `_check_owner`、令牌放回 JSON、403 不關連線。
+  - 第二輪：`save_config` 不檢查 chat（3 失敗）、`use_ok` 永遠放行（2）、每次從磁碟推導授權（2）、新 Key 不作廢舊授權（1）、輸入 Key 不綁定 `key_urls`（3）、不檢查他人可寫（4）、`use` 不檢查內容擁有者（1）、拿掉白名單（1）。
+
+### 第二輪 HTTP 重現（埠 8799、暫存資料目錄）
+```
+設定 DeepSeek + Key                                         → 200
+重現 1：POST /api/config {"chat": {evil 卡片}}               → 400「介面地址改了：…請重新輸入一次 API Key」
+重現 1 續：POST /api/config {"openai": {"base_url": evil}}   → 400（同上）
+重現 2：先埋智譜 evil 卡片（沒 Key）→ 200；使用者在翻譯設定輸入智譜 Key → 200
+        chat_models.engine_cfg(evil) → EngineError「這個介面地址沒有被認可使用已存的 API Key…」，不發請求
+重現 3：搬到權限 777 的自有目錄                               → 400「目標資料夾其他使用者也能寫入…」
+```
 
 ### 實際啟動服務（埠 8799、暫存的 EASYREAD_HOME / 文獻庫，未碰 8765 與真實設定）
 
@@ -149,6 +172,6 @@ $ curl -s $U/api/library | grep -c '"token"'          → 0
 
 1. **本機其他帳號與沙箱程式仍能取得令牌，也仍能用 GET 讀所有論文**（`/p/{id}/source.pdf`、`/api/p/{id}/state` 等 GET 都不需要憑證）。根治做法是 Jupyter 式：啟動時產生祕密，只透過啟動器開的網址（或 Electron）交給瀏覽器，伺服器設 HttpOnly SameSite=Strict cookie，GET 也要驗。這會改變書籤與開啟方式，不是最小修改，建議另開議題。
 2. **少數 GET 有副作用**，可被跨站 `<img src>` 觸發（不需要令牌）：`/api/update?force=1`（對 GitHub 發請求）、`/api/engines?fresh=1`（重新偵測 CLI）、`/api/p/{id}/state`（更新 last_opened、狀態改為閱讀中）、`/api/p/{id}/export`。目前看來只是小幅擾動，未修。
-3. **base_url 的預埋攻擊**：攻擊者先替「還沒存 Key 的服務商」加一張 evil 地址的卡片（此時沒 Key 可偷，允許），之後使用者在設定頁替那家服務商輸入 Key 時，同一次儲存會把名單上該服務商的所有自訂地址一併認可。前提是使用者沒注意到名單上多了一張陌生卡片。
+3. **base_url**：「先埋卡片、後填 Key」第二輪已擋（送出時檢查）。剩下的是：拿到令牌的人仍能**埋**沒 Key 的卡片、或把翻譯地址改成 evil（只要那家還沒存 Key），使用者之後若**就在那張卡片 / 那個地址上**輸入 Key，就等於自己授權了它。前提是使用者沒注意到地址被改。另外沒 Key 的服務（例如自架、免 Key）送出的論文內容本來就不受 Key 綁定保護。
 4. **文獻庫搬家**：同 uid 的沙箱程式可指定自己容器內的目錄（見第 2 節）；Windows 未檢查，且 Windows 上 UNC 路徑（`\\host\share`）在 `inspect` 時就會連線，可能洩漏 NTLM 雜湊，未處理；`/api/library/cleanup` 這次沒有深入審查。
 5. 前端沒有在真實瀏覽器實測（見上）。

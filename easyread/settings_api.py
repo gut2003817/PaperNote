@@ -5,8 +5,37 @@ from . import chat_models, cli_guard, config, engines, key_guard, langs, obsidia
 from .i18n import tr
 
 
+# /api/config 接受的頂層欄位與型別（白名單）。chat 走和 /api/chat/models 同一套 Key 地址檢查。
+_FIELDS = {"engine": str, "auto_translate": bool, "target": str, "obsidian_vault": str, "check_updates": bool,
+           "batch_pages": int, "page_cap": None, "concurrency": int, "claude": dict, "codex": dict, "openai": dict, "chat": dict}
+_ENGINES = ("claude", "codex", "openai", "none")
+_OPENAI_FIELDS = {"preset", "base_url", "api", "model", "api_key", "vision", "timeout", "reasoning_effort", "service_tier"}
+
+
+def _check_fields(patch: dict) -> None:
+    if not isinstance(patch, dict):
+        raise ValueError(tr("设置格式不对"))
+    for k, v in patch.items():
+        t = _FIELDS.get(k)
+        if k not in _FIELDS:
+            raise ValueError(tr("不认识的设置项：{key}", key=str(k)[:40]))
+        if t is not None and type(v) is not t:  # bool 不当 int；page_cap 在下面有自己的检查与提示
+            raise ValueError(tr("设置项 {key} 的格式不对", key=k))
+    if "engine" in patch and patch["engine"] not in _ENGINES:
+        raise ValueError(tr("设置项 {key} 的格式不对", key="engine"))
+    for k in ("batch_pages", "concurrency"):
+        if k in patch and patch[k] < 0:
+            raise ValueError(tr("设置项 {key} 的格式不对", key=k))
+    if "openai" in patch:
+        extra = set(patch["openai"]) - _OPENAI_FIELDS
+        if extra:
+            raise ValueError(tr("不认识的设置项：{key}", key="openai." + sorted(extra)[0][:40]))
+
+
 def save_config(patch: dict) -> dict:
-    patch.pop("library_dir", None)
+    if isinstance(patch, dict):
+        patch.pop("library_dir", None)
+    _check_fields(patch)
     cli_guard.check_patch(patch)  # command / extra_args 等会进子进程的值：一处不合法整个拒绝，不写盘
     if "page_cap" in patch and (type(patch["page_cap"]) is not int or patch["page_cap"] < 0):
         raise ValueError(tr("页数确认上限必须是非负整数"))
@@ -19,26 +48,24 @@ def save_config(patch: dict) -> dict:
         patch["obsidian_vault"] = v.strip()
         if patch["obsidian_vault"]:
             obsidian_vault.check_vault(patch["obsidian_vault"])
-    if isinstance(patch.get("openai"), dict):
-        patch["openai"] = _guard_openai(patch["openai"])
+    cur = config.load()
+    if "chat" in patch:  # 和 /api/chat/models 同一套检查（自定义地址的卡片不能沿用已存的 Key）
+        chat, _ = _chat_patch(patch["chat"], cur, {}, {})
+        patch["chat"] = chat
+    if "openai" in patch:
+        patch["openai"] = _guard_openai(patch["openai"], cur)
     return {"config": config.public(config.save(patch))}
 
 
-def _guard_openai(o: dict) -> dict:
+def _guard_openai(o: dict, cur: dict) -> dict:
     """改接口地址時不能默默沿用已存的 Key（見 key_guard.py）。不合格整個拒絕，不寫盤。"""
-    cur = config.load()
     co = cur["openai"]
-    if "key_origins" in o:
-        raise ValueError(tr("不能直接修改 key_origins"))
     key_guard.check_url(o.get("base_url"))
     preset = o.get("preset", co.get("preset")) or ""
     url = o.get("base_url", co.get("base_url"))
     origins = dict(co.get("key_origins") or {})
-    old = co.get("preset") or ""
-    if old not in origins and key_guard.has_key(cur, old) and key_guard.origin(co.get("base_url")):
-        origins[old] = [key_guard.origin(co.get("base_url"))]  # 舊設定沒記地址：補記，切走再切回不用重填 Key
     if key_guard.fresh_key(o.get("api_key")):
-        origins = key_guard.remember(origins, preset, [url])
+        origins = key_guard.entered(cur, origins, preset, o["api_key"], [url])  # 只認這個請求裡一起填的地址
     elif not key_guard.may_send(cur, preset, url):
         raise key_guard.refuse()
     out = config.with_key(o)
@@ -46,35 +73,48 @@ def _guard_openai(o: dict) -> dict:
     return out
 
 
-def save_chat_models(body: dict) -> dict:
-    """保存“问 AI”的名单和默认模型；或面板里只改默认。"""
+def _chat_patch(body: dict, cur: dict, fresh: dict, key_urls: dict) -> tuple[dict, dict]:
+    """名单的 patch + 新的 key_origins。fresh：这次请求里亲手输入的 Key {服务商: Key}；key_urls：那把 Key 是在哪个地址的卡片里输入的。"""
+    if not isinstance(body, dict) or set(body) - {"models", "default"}:
+        raise ValueError(tr("设置格式不对"))
     patch = {}
-    cur = config.load()
-    fresh = {str(k) for k, v in body["keys"].items() if key_guard.fresh_key(v)} if isinstance(body.get("keys"), dict) else set()
     origins = dict(cur["openai"].get("key_origins") or {})
+    for preset, key in fresh.items():  # 只授权同一个请求里它所在卡片的地址；不会顺带授权名单上原有的其他卡片
+        url = key_urls.get(preset) if isinstance(key_urls, dict) else None
+        origins = key_guard.entered(cur, origins, preset, key, [url] if isinstance(url, str) else [])
     if "models" in body:
+        if not isinstance(body["models"], list) or not all(isinstance(m, dict) for m in body["models"]):
+            raise ValueError(tr("设置格式不对"))
         patch["models"] = chat_models.sanitize(body["models"])
-        # 自訂地址的卡片：已存的 Key 只能送往原本認可的地址；新地址要在這次一起重新輸入那家的 Key（見 key_guard.py）
-        new_urls: dict[str, list] = {}
+        saved = {(m.get("preset") or "", m.get("base_url") or "") for m in (cur.get("chat") or {}).get("models") or [] if isinstance(m, dict)}
+        after = {**cur, "openai": {**cur["openai"], "key_origins": origins}}
         for m in patch["models"]:
             if m["engine"] != "openai" or not m.get("base_url"):
                 continue
             key_guard.check_url(m["base_url"])
-            if m["preset"] in fresh:
-                new_urls.setdefault(m["preset"], []).append(m["base_url"])
-            elif not key_guard.may_send(cur, m["preset"], m["base_url"]):
+            if m["preset"] in fresh and not key_guard.authorized(m["preset"], origins, m["base_url"]) and (m["preset"], m["base_url"]) not in saved:
                 raise key_guard.refuse()
-        for preset, urls in new_urls.items():
-            origins = key_guard.remember(origins, preset, urls + list(origins.get(preset) or []))
-    if body.get("default"):
-        patch["default"] = str(body["default"])
+            # 新加或改了地址的卡片：已存的 Key 必须认可这个地址；没改的旧卡片不挡保存，用的时候再挡（chat_models.engine_cfg）
+            if m["preset"] not in fresh and (m["preset"], m["base_url"]) not in saved and not key_guard.may_send(after, m["preset"], m["base_url"]):
+                raise key_guard.refuse()
+    if "default" in body:
+        if not isinstance(body["default"], str):
+            raise ValueError(tr("设置格式不对"))
+        if body["default"]:
+            patch["default"] = body["default"]
+    return patch, origins
+
+
+def save_chat_models(body: dict) -> dict:
+    """保存“问 AI”的名单和默认模型；或面板里只改默认。"""
+    cur = config.load()
+    keys_in = body.get("keys") if isinstance(body.get("keys"), dict) else {}
+    fresh = {str(k): str(v) for k, v in keys_in.items() if key_guard.fresh_key(v)}
+    patch, origins = _chat_patch({k: body[k] for k in ("models", "default") if k in body}, cur, fresh, body.get("key_urls") or {})
     full = {"chat": patch}
-    if isinstance(body.get("keys"), dict):  # 设置里给某家 API 填的 Key，和翻译那边共用
-        keys = dict(cur["openai"].get("keys") or {})
-        keys.update({str(k): str(v).strip() for k, v in body["keys"].items() if v and not str(v).startswith("••••")})
-        full["openai"] = {"keys": keys, "key_origins": origins}
-    elif origins != (cur["openai"].get("key_origins") or {}):
-        full["openai"] = {"key_origins": origins}
+    keys = dict(cur["openai"].get("keys") or {})
+    keys.update({str(k): str(v).strip() for k, v in keys_in.items() if key_guard.fresh_key(v)})  # 和翻译那边共用
+    full["openai"] = {"keys": keys, "key_origins": origins}
     config.save(full)
     return chat_models.listing(config.load())
 
@@ -93,13 +133,15 @@ def list_models(body: dict) -> dict:
         key_guard.check_url(body.get("base_url"))
     except ValueError as e:
         return {"ok": False, "message": str(e)}
+    o = {"base_url": body.get("base_url"), "api_key": key, "_typed_key": True}  # 刚输入的 Key：送哪里由输入的人决定
     if not key or key.startswith("••••"):
         cfg, preset = config.load(), str(body.get("preset") or "")
         if not key_guard.may_send(cfg, preset, body.get("base_url")):  # 已存的 Key 不送往没认可过的地址
             return {"ok": False, "message": str(key_guard.refuse())}
-        key = (cfg["openai"].get("keys") or {}).get(preset, "")
+        o = {"base_url": body.get("base_url"), "preset": preset, "key_origins": cfg["openai"].get("key_origins") or {},
+             "api_key": (cfg["openai"].get("keys") or {}).get(preset, "")}
     try:
-        return {"ok": True, "models": openai_api.models({"base_url": body.get("base_url"), "api_key": key})}
+        return {"ok": True, "models": openai_api.models(o)}
     except engines.EngineError as e:
         return {"ok": False, "message": str(e)[:300]}
 

@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from easyread import cloudlib, config, key_guard, launch, openai_api, server, settings_api
+from easyread import chat_models  # 要在 config 之後匯入（chat_models ↔ config 互相引用）
 from easyread.cli import server_token
 from easyread.engines import EngineError
 from easyread.library import Library
@@ -89,6 +90,86 @@ class BaseUrlKeyTest(_ConfigTmp):
     def test_key_origins_cannot_be_injected(self):
         with self.assertRaises(ValueError):
             settings_api.save_config({"openai": {"base_url": "https://evil.example", "key_origins": {"deepseek": ["https://evil.example:443"]}}})
+        for bad in ({"key_origins_v": 0}, {"keys": {"deepseek": "x"}}):
+            with self.assertRaises(ValueError):
+                settings_api.save_config({"openai": bad})
+        for bad in ({"unknown": 1}, {"port": 1}, {"engine": "evil"}, {"auto_translate": "yes"}, {"chat": "x"}, {"chat": {"other": 1}}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                settings_api.save_config(bad)
+
+    EVIL_CARD = {"id": "evil", "engine": "openai", "preset": "deepseek", "base_url": "https://evil.example/v1", "model": "x", "name": "x"}
+
+    def test_repro_chat_in_config_patch_refused(self):
+        # 審查重現：/api/config 的 patch 帶 chat，加一張 evil 地址、沿用 DeepSeek 已存 Key 的卡片
+        before = self.disk()
+        with self.assertRaises(ValueError):
+            settings_api.save_config({"chat": {"models": [self.EVIL_CARD]}})
+        self.assertEqual(self.disk(), before)
+        with self.assertRaises(ValueError):  # 接著把翻譯的 base_url 改成 evil 也不行
+            settings_api.save_config({"openai": {"base_url": "https://evil.example/v1"}})
+        self.assertEqual(self.disk(), before)
+
+    def test_repro_preplant_card_then_user_enters_key(self):
+        # 對方先替「還沒存 Key」的服務商埋一張 evil 卡片（沒 Key 可偷，存得進去）
+        settings_api.save_chat_models({"models": [{**self.EVIL_CARD, "preset": "zhipu"}], "keys": {}})
+        # 之後使用者在翻譯設定（官方地址）輸入智譜的 Key
+        settings_api.save_config({"openai": {"preset": "zhipu", "base_url": "https://open.bigmodel.cn/api/paas/v4", "api_key": "sk-zhipu-REAL"}})
+        cfg = config.load()
+        self.assertEqual(cfg["openai"]["key_origins"]["zhipu"], [])
+        with self.assertRaises(EngineError):  # 用的時候擋：evil 卡片拿不到 Key
+            chat_models.engine_cfg(cfg, "evil")
+        o = {**cfg["openai"], "preset": "zhipu", "base_url": "https://evil.example/v1", "api_key": "sk-zhipu-REAL"}
+        with self.assertRaises(EngineError):
+            openai_api._headers(o)
+        # 使用者在名單裡另一張卡片（自己的代理）輸入同一把 Key：只授權那張卡片的地址，evil 仍然不行
+        mine = {"id": "mine", "engine": "openai", "preset": "zhipu", "base_url": "https://proxy.mine.example/v1", "model": "y", "name": "y"}
+        settings_api.save_chat_models({"models": [{**self.EVIL_CARD, "preset": "zhipu"}, mine], "keys": {"zhipu": "sk-zhipu-REAL"},
+                                       "key_urls": {"zhipu": mine["base_url"]}})
+        cfg = config.load()
+        self.assertEqual(chat_models.engine_cfg(cfg, "mine")[0]["openai"]["api_key"], "sk-zhipu-REAL")
+        with self.assertRaises(EngineError):
+            chat_models.engine_cfg(cfg, "evil")
+
+    def test_use_time_refuses_unauthorized_saved_key(self):
+        # 繞過存檔檢查、直接寫進磁碟的設定（已遷移過）：送出時仍擋
+        cfg = self.disk()
+        cfg["openai"]["base_url"] = "https://evil.example/v1"
+        cfg["chat"] = {"models": [self.EVIL_CARD], "default": "evil"}
+        write_json_atomic(config.CONFIG_PATH, cfg)
+        loaded = config.load()
+        self.assertNotIn("https://evil.example:443", loaded["openai"]["key_origins"].get("deepseek", []))  # 遷移只做一次，不從磁碟推導
+        with self.assertRaises(EngineError):
+            openai_api._headers(loaded["openai"])
+        with self.assertRaises(EngineError):
+            chat_models.engine_cfg(loaded, "evil")
+        # 官方地址照常帶 Key；剛輸入的 Key（_typed_key）不受限
+        self.assertIn("Authorization", openai_api._headers({**loaded["openai"], "base_url": "https://api.deepseek.com"}))
+        self.assertIn("Authorization", openai_api._headers({"base_url": "https://any.example", "api_key": "k", "_typed_key": True}))
+
+    def test_attacker_own_key_authorization_revoked_by_new_key(self):
+        settings_api.save_config({"openai": {"base_url": "https://evil.example/v1", "api_key": "sk-attacker"}})
+        settings_api.save_config({"openai": {"base_url": "https://api.deepseek.com", "api_key": "sk-user-new"}})
+        self.assertFalse(key_guard.may_send(config.load(), "deepseek", "https://evil.example/v1"))
+
+    def test_same_key_resent_adds_url(self):
+        # 設定頁先存名單（Key 在卡片 U 輸入），再存翻譯設定（同一把 Key、翻譯用 T）：兩個地址都要能用
+        u, t = "https://u.example/v1", "https://t.example/v1"
+        settings_api.save_chat_models({"models": [{**self.EVIL_CARD, "id": "u", "base_url": u}], "keys": {"deepseek": "sk-k2"}, "key_urls": {"deepseek": u}})
+        settings_api.save_config({"openai": {"base_url": t, "api_key": "sk-k2"}})
+        cfg = config.load()
+        self.assertTrue(key_guard.may_send(cfg, "deepseek", u) and key_guard.may_send(cfg, "deepseek", t))
+
+    def test_legacy_migration_once_without_rewriting_on_load(self):
+        write_json_atomic(config.CONFIG_PATH, {"openai": {"preset": "", "base_url": "http://192.168.1.5:8000/v1", "api_key": SECRET, "keys": {"": SECRET}},
+                                               "chat": {"models": [{"id": "c", "engine": "openai", "preset": "", "base_url": "http://10.0.0.2/v1", "model": "m"},
+                                                                   {"id": "z", "engine": "openai", "preset": "zhipu", "base_url": "https://z.example", "model": "m"}]}})
+        raw = config.CONFIG_PATH.read_bytes()
+        o = config.load()["openai"]
+        self.assertEqual(config.CONFIG_PATH.read_bytes(), raw)  # 讀取不改寫檔案
+        self.assertEqual(sorted(o["key_origins"][""]), ["http://10.0.0.2:80", "http://192.168.1.5:8000"])
+        self.assertNotIn("zhipu", o["key_origins"])  # 當時沒 Key 的服務商不遷移
+        settings_api.save_config({"batch_pages": 3})
+        self.assertEqual(self.disk()["openai"]["key_origins_v"], 1)
 
     def test_legacy_custom_config_keeps_working(self):
         # 升級前的設定：自訂地址 + Key，沒有 key_origins
@@ -108,7 +189,7 @@ class BaseUrlKeyTest(_ConfigTmp):
             settings_api.save_chat_models({"models": [card], "keys": {"deepseek": "••••1234"}})
         self.assertEqual(self.disk(), before)
         # 使用者自己在同一次儲存裡重新輸入 Key：可以
-        settings_api.save_chat_models({"models": [card], "keys": {"deepseek": "sk-typed-again"}})
+        settings_api.save_chat_models({"models": [card], "keys": {"deepseek": "sk-typed-again"}, "key_urls": {"deepseek": card["base_url"]}})
         self.assertIn("https://evil.example:443", config.load()["openai"]["key_origins"]["deepseek"])
         # 已存的卡片不動、再存一次（打碼 Key）：可以
         settings_api.save_chat_models({"models": [card], "keys": {}})
@@ -180,6 +261,35 @@ class LibraryMoveOwnerTest(_ConfigTmp):
             self.location.move({"path": str(target), "mode": "copy"})
         self.assertFalse(target.exists())
         self.assertEqual(config.load()["library_dir"], str(self.src))
+
+    def test_move_into_group_or_world_writable_folder_refused(self):
+        for bits in (0o770, 0o707, 0o777):
+            target = self.root / f"shared-{bits:o}"
+            target.mkdir()
+            os.chmod(target, bits)
+            with self.subTest(mode=oct(bits)), self.assertRaisesRegex(ValueError, "其他用户也能写入|Other users|其他使用者"):
+                self.location.move({"path": str(target), "mode": "copy"})
+        self.assertEqual(config.load()["library_dir"], str(self.src))
+
+    def test_use_library_with_foreign_owned_file_refused(self):
+        lib = self.root / "other" / "EasyRead"
+        (lib / "p2").mkdir(parents=True)
+        write_json_atomic(lib / "p2" / "item.json", {})
+        write_json_atomic(lib / "p2" / "paper.json", {"meta": {}})
+        planted = lib / "p2" / "source.pdf"
+        planted.write_bytes(b"%PDF evil")
+        real = Path.lstat
+
+        def fake(self_, *a, **k):
+            st = real(self_, *a, **k)
+            if self_ == planted:
+                return SimpleNamespace(st_uid=os.getuid() + 4242, st_mode=st.st_mode)
+            return st
+        with patch.object(Path, "lstat", fake):
+            with self.assertRaisesRegex(ValueError, "不属于当前用户|not owned|不屬於"):
+                self.location.move({"path": str(lib), "mode": "use"})
+        self.assertEqual(config.load()["library_dir"], str(self.src))
+        self.assertTrue(self.location.move({"path": str(lib), "mode": "use"})["ok"])  # 全是自己的檔案：照常可用
 
     def test_move_into_own_folder_still_works(self):
         r = self.location.move({"path": str(self.dst), "mode": "copy"})
@@ -253,6 +363,26 @@ class TokenTest(unittest.TestCase):
         c.request("POST", "/api/prefs", body=b'{"reader":{"x":2}}', headers={"X-Token": self.app.token, "Content-Type": "application/json"})
         self.assertEqual(c.getresponse().status, 200)
         c.close()
+
+    def test_http_config_patch_with_chat_refused(self):
+        # 走真正的 HTTP /api/config：patch 帶 chat，加一張 evil 地址、沿用已存 Key 的卡片
+        def post_json(path, obj):
+            req = urllib.request.Request(self.url + path, data=json.dumps(obj).encode(),
+                                         headers={"Content-Type": "application/json", "X-Token": self.app.token})
+            try:
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    return r.status, json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read())
+        status, _ = post_json("/api/config", {"openai": {"preset": "deepseek", "base_url": "https://api.deepseek.com", "api_key": SECRET}})
+        self.assertEqual(status, 200)
+        card = {"id": "evil", "engine": "openai", "preset": "deepseek", "base_url": "https://evil.example/v1", "model": "x"}
+        status, body = post_json("/api/config", {"chat": {"models": [card], "default": "evil"}})
+        self.assertEqual(status, 400, body)
+        self.assertNotIn("evil", json.dumps(config.load()["chat"]))
+        status, body = post_json("/api/config", {"openai": {"base_url": "https://evil.example/v1"}})
+        self.assertEqual(status, 400, body)
+        self.assertEqual(config.load()["openai"]["base_url"], "https://api.deepseek.com")
 
     def test_frontend_no_longer_reads_token_from_json(self):
         bad = re.compile(r"\.token\s*=\s*(d|data|info|res|r)\.token|\)\)\.token|\.json\(\)\)\.token")

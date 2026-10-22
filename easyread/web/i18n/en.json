@@ -1200,6 +1200,11 @@
  "模型回复不是有效的 JSON": "The model's reply was not valid JSON",
  "接口地址必须以 http:// 或 https:// 开头": "The API address must start with http:// or https://",
  "接口地址改了：为了不把已存的 API Key 发到新地址，请重新输入一次 API Key": "The API address changed. To avoid sending your saved API key to a new address, please enter the API key again",
- "不能直接修改 key_origins": "key_origins cannot be changed directly",
- "目标文件夹不属于当前用户，不能把文献库放在这里：{path}": "The target folder does not belong to the current user, so the library cannot be placed there: {path}"
+ "目标文件夹不属于当前用户，不能把文献库放在这里：{path}": "The target folder does not belong to the current user, so the library cannot be placed there: {path}",
+ "设置格式不对": "Invalid settings format",
+ "不认识的设置项：{key}": "Unknown setting: {key}",
+ "设置项 {key} 的格式不对": "Invalid value for setting {key}",
+ "这个接口地址没有被认可使用已存的 API Key：请在设置里为它重新输入一次 API Key": "This API address is not authorized to use the saved API key. Enter the API key again for it in Settings",
+ "目标文件夹其他用户也能写入，不能把文献库放在这里：{path}": "Other users can write to the target folder, so the library cannot be placed there: {path}",
+ "目标文献库里有不属于当前用户的文件，不能使用或合并：{path}": "The target library contains files not owned by the current user, so it cannot be used or merged: {path}"
 }
