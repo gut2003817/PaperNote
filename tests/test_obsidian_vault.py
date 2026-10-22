@@ -102,6 +102,15 @@ class ObsidianVaultTest(unittest.TestCase):
                 self.assertEqual(obsidian_vault.safe_name(value), expected)
         self.assertEqual(obsidian_vault.safe_name("論文標題", limit=2), "論文")
 
+    def test_safe_name_never_returns_hidden_or_dot_names(self):
+        # 開頭的點會讓 Obsidian 當成隱藏檔，筆記與附圖都會「消失」
+        cases = [(".hidden", "hidden"), ("../../evil/na:me", "evilname"), ("...", "paper"),
+                 ("a.", "a")]
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(obsidian_vault.safe_name(value), expected)
+        self.assertFalse(obsidian_vault.safe_name("  .x  ").startswith("."))
+
     def test_write_new_never_overwrites(self):
         first = obsidian_vault.write_new(self.root, "a", ".md", b"first")
         second = obsidian_vault.write_new(self.root, "a", ".md", b"second")

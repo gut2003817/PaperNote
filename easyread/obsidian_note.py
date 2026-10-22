@@ -102,22 +102,34 @@ def _inline(value) -> str:
     return " ".join(str(value or "").splitlines()).strip()
 
 
+_FENCE_OPEN = re.compile(r"^\s{0,3}(`{3,}|~{3,})(.*)$")
+_FENCE_CLOSE = re.compile(r"^\s{0,3}(`{3,}|~{3,})\s*$")
+# 一级标题可能藏在引用、列表里（> # x、- # x、1. # x），同样降级
+_H1 = re.compile(r"^((?:\s{0,3}(?:>[ \t]?|[-*+][ \t]+|\d{1,9}[.)][ \t]+))*)\s{0,3}#(?:[ \t]+|$)")
+
+
 def _markdown(value: str) -> str:
     # 模型即使忽略提示词，也不能再增加笔记的一层标题；程式码保持原样。
     lines, fence = [], None
     for line in value.splitlines():
-        match = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
-        if match:
-            marker = match[1]
-            if fence is None:
-                fence = marker
-            elif marker[0] == fence[0] and len(marker) >= len(fence):
+        if fence is not None:
+            lines.append(line)
+            close = _FENCE_CLOSE.match(line)
+            if close and close[1][0] == fence[0] and len(close[1]) >= len(fence):
                 fence = None
-        if fence is None:
-            line = re.sub(r"^(\s{0,3})#(?:[ \t]+|$)", r"\1### ", line)
-            # Setext 一级标题降为二级，避免 Obsidian 识别为额外 H1。
-            line = re.sub(r"^\s{0,3}=+\s*$", "---", line)
+            continue
+        opened = _FENCE_OPEN.match(line)
+        # CommonMark：反引号围栏的 info string 不能含反引号，否则不是围栏
+        if opened and not (opened[1][0] == "`" and "`" in opened[2]):
+            fence = opened[1]
+            lines.append(line)
+            continue
+        line = _H1.sub(r"\1### ", line)
+        # Setext 一级标题降为二级，避免 Obsidian 识别为额外 H1。
+        line = re.sub(r"^\s{0,3}=+\s*$", "---", line)
         lines.append(line)
+    if fence is not None:  # 模型没闭合围栏：补上，免得吞掉后面所有段落
+        lines.append(fence)
     return "\n".join(lines).strip()
 
 

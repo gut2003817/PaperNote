@@ -166,3 +166,50 @@ def test_parse_reply_wrong_types_are_normalized():
     data = obsidian_note.parse_reply(text)
     assert data["hook"] == "" and data["tags"] == []
     assert data["figures"] == [] and data["diagrams"] == []
+
+
+def _open_fence_at_end(md: str) -> bool:
+    """依 CommonMark 掃描：結尾時是否仍在程式碼圍欄內。"""
+    fence = None
+    for line in md.splitlines():
+        if fence is None:
+            m = re.match(r"^\s{0,3}(`{3,}|~{3,})(.*)$", line)
+            if m and not (m[1][0] == "`" and "`" in m[2]):
+                fence = m[1]
+        else:
+            m = re.match(r"^\s{0,3}(`{3,}|~{3,})\s*$", line)
+            if m and m[1][0] == fence[0] and len(m[1]) >= len(fence):
+                fence = None
+    return fence is not None
+
+
+def test_render_closes_unclosed_fence_from_model(ctx, data):
+    data["limits"] = "說明\n```\n未閉合圍欄"
+    md = obsidian_note.render(ctx, data, {"fig-a": "a.png"}, today="2026-10-22")
+    assert not _open_fence_at_end(md)
+    assert md.count("### 我的想法") == 1
+    after = md.split("### 我的想法")[0]
+    assert "```" in after.splitlines()[-3:] or after.rstrip().endswith("```")
+
+
+def test_render_backtick_info_string_is_not_a_fence(ctx, data):
+    # 反引號圍欄的 info string 不能含反引號，所以這不是圍欄，下一行的標題必須被降級
+    data["problem"] = "```x`y\n# 繞過H1"
+    md = obsidian_note.render(ctx, data, {}, today="2026-10-22")
+    assert [l for l in md.splitlines() if l.startswith("# ")] == ["# 論文標題"]
+
+
+def test_render_demotes_h1_inside_list_and_quote(ctx, data):
+    data["problem"] = "- # 清單內H1\n> # 引用H1\n1. # 編號H1"
+    data["limits"] = "> # 限制裡的H1"
+    md = obsidian_note.render(ctx, data, {}, today="2026-10-22")
+    for bad in ("- # 清單內H1", "> # 引用H1", "1. # 編號H1", "> # 限制裡的H1"):
+        assert bad not in md
+    assert "清單內H1" in md and "引用H1" in md  # 內容保留，只降級
+
+
+def test_render_keeps_headings_inside_real_code_fence(ctx, data):
+    data["method"] = "```python\n# 這是程式註解\nx = 1\n```"
+    md = obsidian_note.render(ctx, data, {}, today="2026-10-22")
+    assert "# 這是程式註解" in md.splitlines()
+    assert "### 這是程式註解" not in md

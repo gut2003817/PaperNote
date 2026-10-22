@@ -54,7 +54,8 @@ def safe_name(s: str, limit: int = 40) -> str:
     """删除禁用字符，合并空白并限制文件名长度。"""
     s = _BAD_NAME.sub("", s)
     s = "".join(c for c in s if unicodedata.category(c) != "Cc")
-    return "-".join(s.split())[:limit] or "paper"
+    # 開頭的點會變成隱藏檔（Obsidian 不索引），結尾的點在部分系統不合法
+    return "-".join(s.split())[:limit].strip(".") or "paper"
 
 
 def write_new(dir_: Path, stem: str, suffix: str, data: bytes) -> Path:
