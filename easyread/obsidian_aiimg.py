@@ -13,6 +13,9 @@ from . import codex_lean, engines, obsidian_vault
 from .i18n import tr
 
 
+_IMAGE_FEATURES = ("image_generation", "code_mode_host", "skill_search")  # 生图要开着的功能，其余照 lean 关掉
+
+
 def generate_image(codex_cfg: dict, visual: str, dest_dir: Path, stem: str,
                    cancel=None, timeout: int = 600) -> str:
     exe = engines.codex_path(codex_cfg)
@@ -26,10 +29,16 @@ def generate_image(codex_cfg: dict, visual: str, dest_dir: Path, stem: str,
                 "--ephemeral", "--color", "never", "--json", "-C", str(tmp)]
         if codex_cfg.get("model"):
             args += ["--model", codex_cfg["model"]]
-        # 只沿用 lean 里关掉 MCP 服务的部分：功能开关整组都不能关，
-        # 实测（codex-cli 0.159.3）只把 image_generation 改回 true，生图工具仍不可用。
+        # 画面描述来自论文，可能夹带提示注入：沿用 lean 关掉 MCP 与浏览器、电脑操作、插件等功能，
+        # 只放开生图要用的几项（实测 codex-cli 0.159.3：只开 image_generation 不够，还要 code_mode_host、skill_search）。
+        # 沙箱只能写这次的临时目录，不含 $TMPDIR 与 /tmp。
         full = codex_lean.args()
-        lean = [x for pair in zip(full[::2], full[1::2]) if not pair[1].startswith("features.") for x in pair]
+        lean = [x for pair in zip(full[::2], full[1::2])
+                if pair[1].split("=", 1)[0] not in {f"features.{f}" for f in _IMAGE_FEATURES} for x in pair]
+        lean += ["-c", "features.image_generation=true",
+                 "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true",
+                 "-c", "sandbox_workspace_write.exclude_slash_tmp=true",
+                 "-c", "sandbox_workspace_write.network_access=false"]
         prompt = (
             "Use the built-in image_gen tool to generate exactly one image. "
             "Save it as out.png in the current directory. "
@@ -41,19 +50,8 @@ def generate_image(codex_cfg: dict, visual: str, dest_dir: Path, stem: str,
         # JSON 跳脱明确界定资料边界，描述不能结束包装区块。
         prompt += json.dumps(visual, ensure_ascii=False)
 
-        def run(extra):
-            return engines._communicate(
-                engines._popen(args + extra + ["-c", "features.image_generation=true", "-"], tmp),
-                prompt, timeout, cancel)
-
-        try:
-            out = run(lean)
-        except engines.EngineError as exc:
-            if not lean or not engines._CONFIG_ERR.search(str(exc)):
-                raise
-            out = str(exc)
-        if lean and not (tmp / "out.png").exists() and engines._CONFIG_ERR.search(out or ""):
-            run([])
+        # 参数不被认时直接失败、略过这张图，不去掉限制重跑（与翻译路径不同）。
+        engines._communicate(engines._popen(args + lean + ["-"], tmp), prompt, timeout, cancel)
         path = tmp / "out.png"
         if not path.is_file():
             candidates = [p for p in tmp.rglob("*")
