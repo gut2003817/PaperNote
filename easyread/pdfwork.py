@@ -10,6 +10,7 @@ import threading
 import unicodedata
 from contextlib import closing, contextmanager
 from functools import lru_cache
+from io import BytesIO
 from pathlib import Path
 from statistics import median
 
@@ -99,18 +100,32 @@ def _char_box(box, bounds, rotation: int) -> list[float] | None:
     return [round(v, 4) for v in (x0, y0, x1, y1)]
 
 
-def crop(root: Path, page: int, box: list[float], out_name: str, scale: float = 3.0) -> str:
-    """box 是按页宽高归一化的 [x0, y0, x1, y1]；输出到 figures/，返回相对路径。"""
+@contextmanager
+def _crop_image(root: Path, page: int, box: list[float], scale: float):
+    """共用渲染与归一化裁剪；图像使用和资源释放都留在 PDFium 锁内。"""
     with open_pdf(root / "source.pdf") as doc:
         with closing(doc[page - 1]) as pdf_page, closing(pdf_page.render(scale=scale)) as bitmap:
             with bitmap.to_pil() as raw, raw.convert("RGB") as img:
                 W, H = img.size
                 x0, y0, x1, y1 = box
                 with img.crop((int(x0 * W), int(y0 * H), int(x1 * W), int(y1 * H))) as part:
-                    (root / "figures").mkdir(exist_ok=True)
-                    rel = f"figures/{out_name}.webp"
-                    part.save(root / rel, "WEBP", quality=90)
+                    yield part
+
+
+def crop(root: Path, page: int, box: list[float], out_name: str, scale: float = 3.0) -> str:
+    """box 是按页宽高归一化的 [x0, y0, x1, y1]；输出到 figures/，返回相对路径。"""
+    with _crop_image(root, page, box, scale) as part:
+        (root / "figures").mkdir(exist_ok=True)
+        rel = f"figures/{out_name}.webp"
+        part.save(root / rel, "WEBP", quality=90)
     return rel
+
+
+def crop_png(root: Path, page: int, box: list[float], scale: float = 3.0) -> bytes:
+    """返回裁图的 PNG 字节，不创建目录或文件。"""
+    with _crop_image(root, page, box, scale) as part, BytesIO() as output:
+        part.save(output, "PNG")
+        return output.getvalue()
 
 
 # ---------- 定位：译文段落 -> 原页区域 ----------
