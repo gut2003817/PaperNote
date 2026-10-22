@@ -165,6 +165,21 @@ def _copy_verified(src: Path, dst: Path):
     return before
 
 
+def _check_owner(dst: Path) -> None:
+    """目標（不存在時取最近一個已存在的上層目錄）必須屬於目前使用者（POSIX）。
+    擋住拿到寫入令牌的其他帳號／程式把文獻庫搬到 /tmp、/Users/Shared、別的帳號或他預先建好的目錄
+    （之後的論文都會寫到他讀得到的地方，或切換成他準備的文獻庫）。Windows 沒有 getuid，不檢查。"""
+    if not hasattr(os, "getuid"):
+        return
+    p = dst
+    while not p.exists():
+        if p == p.parent:
+            return  # 整條路徑都不存在：交給 inspect 報“路径不存在”
+        p = p.parent
+    if p.stat().st_uid != os.getuid():
+        raise ValueError(tr("目标文件夹不属于当前用户，不能把文献库放在这里：{path}", path=str(p)))
+
+
 def move(src: str | Path, dst: str | Path, mode: str) -> dict:
     if config.temp_library():
         raise ValueError(tr("临时文献库不能更改位置"))
@@ -176,6 +191,7 @@ def move(src: str | Path, dst: str | Path, mode: str) -> dict:
     if any(src == target or src.is_relative_to(target) or target.is_relative_to(src)
            for target in (requested, dst)):
         raise ValueError(tr("新旧文献库不能相同，也不能互相包含"))
+    _check_owner(dst)
     state = inspect(dst, exact=True)
     if not state["writable"]:
         raise ValueError(tr("目标文件夹不可写"))

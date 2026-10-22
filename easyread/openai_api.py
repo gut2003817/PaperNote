@@ -19,7 +19,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Iterator
 
-from . import __version__, http, usage
+from . import __version__, http, key_guard, usage
 from .engines import Cancelled, EngineError
 from .i18n import tr
 
@@ -43,6 +43,8 @@ def _base(o: dict) -> str:
     base = (o.get("base_url") or "").strip().rstrip("/")
     if not base or not o.get("model"):
         raise EngineError(tr("API 没填地址或模型（设置 → 模型）"))
+    if not key_guard.origin(base):  # 只走 http(s)，不让 urllib 打开 file:// 之类
+        raise EngineError(tr("接口地址必须以 http:// 或 https:// 开头"))
     return base
 
 
@@ -354,6 +356,8 @@ def models(o: dict) -> list[str]:
     base = (o.get("base_url") or "").strip().rstrip("/")
     if not base:
         raise EngineError(tr("先填接口地址"))
+    if not key_guard.origin(base):
+        raise EngineError(tr("接口地址必须以 http:// 或 https:// 开头"))
     req = urllib.request.Request(base + "/models", headers=_headers(o))
     try:
         with http.urlopen(req, timeout=20) as r:
