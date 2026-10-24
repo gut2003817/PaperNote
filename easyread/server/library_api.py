@@ -146,7 +146,11 @@ def post(app, path: str, body: dict):
         from ..app.folder_pick import pick
         default = tr("选择 Obsidian 文件夹") if body.get("for") == "obsidian" else tr("选择放文献库的文件夹")
         chosen = pick(str(body.get("title") or "")[:100] or default)  # 迁移 Zotero、导入文件夹也用它
-        return {"supported": chosen is not None, "path": chosen or ""}
+        out = {"supported": chosen is not None, "path": chosen or ""}
+        if chosen:  # 使用者親手選的：發一次性授權，成批匯入只認它（server/pick_grants.py）
+            from . import pick_grants
+            out["nonce"] = pick_grants.of(app).issue(chosen)
+        return out
     if path == "/api/library/cleanup":
         return cloudlib.cleanup(body.get("path", ""), app.lib.root)
     if path == "/api/library/move":

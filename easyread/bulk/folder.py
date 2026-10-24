@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from pathlib import Path
 
 from .. import path_guard
@@ -12,6 +13,13 @@ from ..app.i18n import tr
 from ..zotero.reader import Entry, Snapshot
 
 MAX_FILES = 5000
+
+
+def _regular(p: Path) -> bool:
+    try:
+        return stat.S_ISREG(os.lstat(p).st_mode)
+    except OSError:
+        return False
 
 
 def read(path: str) -> Snapshot:
@@ -25,10 +33,14 @@ def read(path: str) -> Snapshot:
     entries: list[Entry] = []
     cats: list[str] = []
     for d, dirs, files in os.walk(root):  # 默认不跟进快捷方式 / 软链接指向的文件夹
+        if not path_guard.trusted_path(d, leaf_mine=True):  # 別人的、別人可寫的子資料夾：整棵跳過
+            dirs[:] = []
+            continue
         dirs[:] = sorted(x for x in dirs if not x.startswith("."))
         rel = Path(d).relative_to(root).parts
         cat = "/".join(p.replace("/", "／") for p in (top, *rel))
-        pdfs = sorted(f for f in files if f.lower().endswith(".pdf") and not f.startswith("."))
+        # 用 lstat：符號連結（即使指到 PDF）和非一般檔案一律不收
+        pdfs = sorted(f for f in files if f.lower().endswith(".pdf") and not f.startswith(".") and _regular(Path(d) / f))
         if pdfs and cat not in cats:
             # 祖先也记下，空着的中间层也按文件夹顺序出现
             for k in range(1, len(rel) + 2):

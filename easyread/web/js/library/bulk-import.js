@@ -5,7 +5,7 @@
   "use strict";
   const L = PR.lib;
   const dlg = PR.$("#bulkDlg"), box = dlg.querySelector(".dialog");
-  const s = { source: "zotero", step: "pick", candidates: [], path: "", scan: null, status: null, tags: true, fetch: false, link: false, busy: false };
+  const s = { source: "zotero", step: "pick", candidates: [], path: "", nonce: "", scan: null, status: null, tags: true, fetch: false, link: false, busy: false };
   let pollT = null;
 
   const esc = PR.esc;
@@ -83,25 +83,36 @@
 
   PR.openZotero = async function () {
     if (await resume()) return;
-    Object.assign(s, { source: "zotero", step: "pick", scan: null, busy: false, path: "" });
+    Object.assign(s, { source: "zotero", step: "pick", scan: null, busy: false, path: "", nonce: "" });
     dlg.classList.add("open");
     render();
-    try { s.candidates = (await PR.api("/api/zotero/detect")).candidates || []; } catch (e) { s.candidates = []; }
+    try { s.candidates = ((await PR.api("/api/zotero/detect")).candidates || []).map((c, i) => ({ ...c, detected: i })); } catch (e) { s.candidates = []; }
     if (s.candidates.length) s.path = s.candidates[0].path;
     render();
   };
   PR.openFolderImport = async function () {
     if (await resume()) return;
-    const p = await PR.pickFolder({ title: PR.t("选择要导入的文件夹") });
+    const p = await PR.pickFolderGranted({ title: PR.t("选择要导入的文件夹") });
     if (!p) return;
-    Object.assign(s, { source: "folder", path: p, scan: null, busy: false, fetch: false });
+    Object.assign(s, { source: "folder", path: p.path, nonce: p.nonce, scan: null, busy: false, fetch: false });
     scan();
   };
 
+  /* Zotero：自己選的資料夾帶著選的時候拿到的 nonce；自動偵測到的要向後端“確認第幾個”換 nonce（不能帶路徑） */
+  async function zoteroNonce() {
+    const c = s.candidates.find((x) => x.path === s.path);
+    if (!c) return "";
+    if (!c.nonce && c.detected != null) {
+      const r = await PR.api("/api/zotero/confirm", { method: "POST", body: { index: c.detected } });
+      if (r.path === c.path) c.nonce = r.nonce;
+    }
+    return c.nonce || "";
+  }
   async function scan() {
     s.busy = true; render();
     try {
-      s.scan = await PR.api("/api/migrate/scan", { method: "POST", body: { source: s.source, path: s.path } });
+      if (zotero()) s.nonce = await zoteroNonce();
+      s.scan = await PR.api("/api/migrate/scan", { method: "POST", body: { source: s.source, path: s.path, nonce: s.nonce } });
       s.step = "scan"; dlg.classList.add("open");
     } catch (e) { PR.toast(PR.t("读不了：{msg}", { msg: esc(e.message) }), null, 8000); }
     s.busy = false; render();
@@ -109,7 +120,9 @@
   async function start() {
     s.busy = true; render();
     try {
-      s.status = await PR.api("/api/migrate/start", { method: "POST", body: { source: s.source, path: s.path, tags: s.tags, fetch: s.fetch, link: s.link } });
+      s.status = await PR.api("/api/migrate/start", { method: "POST", body: { source: s.source, path: s.path, nonce: s.nonce, tags: s.tags, fetch: s.fetch, link: s.link } });
+      s.nonce = "";  // 用掉了：再匯入一次要重新選（Zotero 自動偵測的會再確認一次）
+      for (const c of s.candidates) c.nonce = "";
       s.step = "run"; poll();
     } catch (e) { PR.toast(PR.t("没能开始：{msg}", { msg: esc(e.message) }), null, 8000); }
     s.busy = false; render();
@@ -127,8 +140,12 @@
     if (act === "start") start();
     if (act === "stop") { await PR.api("/api/migrate/stop", { method: "POST", body: {} }).catch(() => {}); poll(); }
     if (act === "other") {
-      const p = await PR.pickFolder({ title: PR.t("选择 Zotero 的数据文件夹"), body: PR.t("Zotero 的 设置 → 高级 → 文件和文件夹 里写着“数据存储位置”，就是放 zotero.sqlite 的那个文件夹。") });
-      if (p) { if (!s.candidates.some((c) => c.path === p)) s.candidates.push({ path: p }); s.path = p; render(); }
+      const p = await PR.pickFolderGranted({ title: PR.t("选择 Zotero 的数据文件夹"), body: PR.t("Zotero 的 设置 → 高级 → 文件和文件夹 里写着“数据存储位置”，就是放 zotero.sqlite 的那个文件夹。") });
+      if (p) {
+        const old = s.candidates.find((c) => c.path === p.path);
+        if (old) old.nonce = p.nonce; else s.candidates.push({ path: p.path, nonce: p.nonce });
+        s.path = p.path; render();
+      }
     }
   });
   dlg.addEventListener("change", (e) => {

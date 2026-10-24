@@ -111,6 +111,11 @@ class Migration:
                         if not path_guard.under_home(e.pdf):  # 連結匯入不複製檔案：只接受家目錄底下的檔案
                             self._note("skipped", e, tr("链接导入只接受你家目录下的文件：{path}", path=str(e.pdf)))
                             continue
+                        try:  # 連結前也以 O_NOFOLLOW 開一次、對 fd 檢查擁有者
+                            path_guard.read_mine(e.pdf)
+                        except (OSError, ValueError):
+                            self._note("skipped", e, tr("文件不属于你或位于临时/共享文件夹，已跳过：{path}", path=str(e.pdf)))
+                            continue
                         ws, fresh = lib.import_pdf_path(e.pdf, e.meta, link=True)
                     else:
                         data, name, meta = self._pdf(e, fetch, lib)
@@ -145,7 +150,10 @@ class Migration:
 
     def _pdf(self, e: Entry, fetch: bool, lib) -> tuple[bytes | None, str, dict]:
         if e.pdf:
-            return Path(e.pdf).read_bytes(), e.pdf.name, e.meta
+            try:  # O_NOFOLLOW＋對 fd 檢查擁有者（path_guard.read_mine）
+                return path_guard.read_mine(e.pdf), e.pdf.name, e.meta
+            except (OSError, ValueError):
+                raise ValueError(tr("文件不属于你或位于临时/共享文件夹，已跳过：{path}", path=str(e.pdf))) from None
         ref = e.meta.get("arxiv", "").removeprefix("arXiv:") or e.meta.get("doi", "")
         if not fetch or not ref:
             return None, "", {}

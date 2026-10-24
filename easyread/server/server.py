@@ -48,6 +48,8 @@ class App:
         self.lib = Library(config.library_dir(cfg))
         self.jobs = Jobs(self.lib)
         self.token = os.urandom(12).hex()
+        # 桌面版 Electron 傳進來的祕密：只有它能替自己彈出的選資料夾視窗換匯入授權（server/pick_grants.py）。pop 掉，子程序不繼承
+        self.desktop_secret = os.environ.pop("EASYREAD_DESKTOP_SECRET", "")
         self.location = library_api.LibraryLocation(self)
         self.presence = None  # presence.Presence，serve() 里设
 
@@ -419,6 +421,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, library_api.post(app, path, json.loads(self._body() or b"{}")))
         if path in jobs_api.POST:  # 一键停止翻译
             return self._json(200, jobs_api.post(app, path, json.loads(self._body() or b"{}")))
+        if path == "/api/pick/grant":  # 桌面版：Electron 主程序替它彈出的選資料夾視窗換一次性授權
+            from . import pick_grants
+            if not pick_grants.desktop_secret_ok(app, self.headers.get("X-Desktop-Secret")):
+                return self._json(403, {"error": "bad desktop secret"})
+            nonce = pick_grants.of(app).issue(str(json.loads(self._body() or b"{}").get("path") or ""))
+            if not nonce:
+                raise ValueError(tr("找不到这个文件夹"))
+            return self._json(200, {"nonce": nonce})
         if path in bulk_api.POST:  # 从 Zotero 迁移、导入文件夹
             return self._json(200, bulk_api.post(app, path, json.loads(self._body() or b"{}")))
         if path == "/api/update":  # 开关“自动检查新版本”

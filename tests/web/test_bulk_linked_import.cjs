@@ -15,7 +15,7 @@ function setup() {
   const PR = {
     $: () => dlg, lib: { load() {}, useServerSide() {} }, esc: String,
     t: (text, vars = {}) => text.replace(/\{(\w+)\}/g, (_, key) => vars[key]),
-    pickFolder: async () => "/papers", loadPrefs: async () => ({}), toast() {},
+    pickFolder: async () => "/papers", pickFolderGranted: async () => ({ path: "/papers", nonce: "n-from-picker" }), loadPrefs: async () => ({}), toast() {},
     api: async (url, options) => {
       requests.push([url, options]);
       if (url.endsWith("/scan")) return { path: "/papers", with_pdf: 2, collections: 1 };
@@ -43,4 +43,7 @@ test("bulk folder import copies by default and submits the selected link option"
   assert.equal(options.body.link, true);
   assert.equal(options.body.fetch, false);
   assert.equal(options.body.source, "folder");
+  assert.equal(options.body.nonce, "n-from-picker");  // 資安加固：只送這次親手選的資料夾換到的 nonce
+  const [, scan] = p.requests.find(([url]) => url.endsWith("/scan"));
+  assert.equal(scan.body.nonce, "n-from-picker");
 });

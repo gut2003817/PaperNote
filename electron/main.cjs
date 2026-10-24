@@ -33,6 +33,7 @@ const isZh = () => app.getLocale().toLowerCase().startsWith("zh");
 // 繁体中文地区（zh-TW、zh-HK、zh-MO、zh-Hant-*）：这几句报错用繁体，别当成简体
 const isZhTW = () => /^zh[-_](tw|hk|mo|hant)/i.test(app.getLocale());
 const say = (cn, tw, en) => (isZhTW() ? tw : isZh() ? cn : en);
+const desktopSecret = require("crypto").randomBytes(24).toString("hex");
 let backend;
 let mainWindow;
 let backendReady;
@@ -75,7 +76,8 @@ function startBackend() {
   if (backendReady) return backendReady;
   backendReady = (async () => {
   const launch = backendCommand();
-  const env = { ...process.env, PYTHONUTF8: "1", EASYREAD_SYSTEM_LANG: app.getLocale() };  // 后端按它决定界面语言
+  const env = { ...process.env, PYTHONUTF8: "1", EASYREAD_SYSTEM_LANG: app.getLocale(),  // 后端按它决定界面语言
+    EASYREAD_DESKTOP_SECRET: desktopSecret };  // 只有主程序知道：替自己彈出的選資料夾視窗換匯入授權（server/pick_grants.py）
   startup.mark(app, "shell-path-start");
   const shellPath = await startup.loginShellPath(process.platform);
   startup.mark(app, "shell-path-ready");
@@ -218,6 +220,37 @@ ipcMain.handle("easyread:pick-folder", async event => {
   trustedWindow(event);
   const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
   return result.canceled ? null : result.filePaths[0] || null;
+});
+// 成批匯入用：選完資料夾，主程序拿桌面祕密向後端換一次性授權；頁面拿不到祕密，只拿到這次的 nonce
+function backendGrant(folder, token) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ path: folder });
+    const req = http.request(new URL("/api/pick/grant", backendUrl), {
+      method: "POST",
+      headers: { "X-Token": token, "X-Desktop-Secret": desktopSecret, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+    }, res => {
+      let text = "";
+      res.setEncoding("utf8");
+      res.on("data", part => { text += part; });
+      res.on("end", () => {
+        try {
+          const data = JSON.parse(text);
+          if (res.statusCode !== 200) return reject(new Error(data.error || `HTTP ${res.statusCode}`));
+          resolve(data.nonce);
+        } catch (error) { reject(error); }
+      });
+    });
+    req.setTimeout(8000, () => req.destroy(new Error("grant timeout")));
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+ipcMain.handle("easyread:pick-folder-granted", async event => {
+  trustedWindow(event);
+  const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
+  const folder = result.canceled ? null : result.filePaths[0] || null;
+  if (!folder) return null;
+  return { path: folder, nonce: await backendGrant(folder, await backendToken()) };
 });
 ipcMain.handle("easyread:relaunch", async event => {
   trustedWindow(event);

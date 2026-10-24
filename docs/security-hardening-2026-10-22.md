@@ -224,6 +224,37 @@ cookie 也要靠某個 GET 回應發下來，本機程式一樣拿得到，效�
 - 變異檢查 11 項全部被測試抓到：拿掉 trusted_path、which 檢查、暫存禁區、擁有者與可寫檢查、資料夾來源檢查、資料夾內檔案檢查、Zotero 附件檢查、Zotero 資料夾檢查、家目錄限制、cleanup 擁有者檢查、nofollow 刪除，各自都有測試失敗。
 - 數字：pytest **859 passed, 1 skipped**；node **228 / 228**。
 
+## 6. 第四輪：成批匯入只接受親手選的資料夾
+
+### 威脅
+第三輪的擁有者檢查擋不住這種情況：
+1. 別的帳號用 `GET /` 拿到令牌。
+2. 再 `POST /api/migrate/start`，指定**受害者自己的**家目錄資料夾。那裡的檔案都屬於受害者，所以擁有者檢查全部通過。
+3. 匯入後，用不需令牌的 `GET /p/<id>/source.pdf` 把檔案讀走。
+
+### 修法（`easyread/server/pick_grants.py`、`bulk/api.py`）
+- `/api/migrate/scan` 與 `/api/migrate/start` 必須帶 `nonce`，任意路徑字串一律回 400。資料夾來源、Zotero 來源、`link:true` 都適用。
+- nonce 的規則：綁定真實路徑；30 分鐘有效；`start` 用掉就作廢；`scan` 不會用掉。
+- nonce 只有三種來源：
+  - **瀏覽器版**：`/api/library/pick-folder` 由後端彈出系統選資料夾視窗，選完才回傳 nonce。系統視窗彈不出來時，**不再讓人手打路徑來匯入**，改為提示無法匯入。
+  - **桌面版**：Electron 主程序產生隨機的 `EASYREAD_DESKTOP_SECRET`，啟動後端時傳進去（後端讀完就從環境變數移除）。新的 IPC `easyread:pick-folder-granted` 彈出視窗，再帶著祕密向 `/api/pick/grant` 換 nonce。頁面只拿得到 nonce，拿不到祕密；沒帶祕密或祕密錯誤回 403。
+  - **自動偵測的 Zotero**：`POST /api/zotero/confirm {"index": i}` 只能選「伺服器自己偵測到的第 i 個」，請求裡帶的路徑會被忽略。
+- 前端：`bulk-import.js` 改用 `PR.pickFolderGranted`；Zotero 自動偵測到的項目在讀取前先 confirm 換 nonce；`start` 之後清掉 nonce。
+
+### 資料夾掃描與讀檔（`bulk/folder.py`、`path_guard.read_mine`、`bulk/runner.py`）
+- 每一層子資料夾都要通過 `trusted_path(leaf_mine=True)`，不通過就整棵跳過（例如屬於自己但別人可寫的子資料夾）。
+- 用 `lstat` 判斷檔案：符號連結和非一般檔案一律不收。
+- 讀 PDF 改用 `O_NOFOLLOW` 開檔，再對實際讀取的那個 fd 做 `fstat`：必須是一般檔案、屬於自己、別人不可寫。Zotero 附件也走同一條讀檔路徑；`link:true` 在連結前也先這樣開一次做檢查。
+
+### 測試與變異檢查
+- HTTP 重現：家目錄型資料夾不帶 nonce、偽造 nonce、空 nonce，`scan` 和 `start` 都回 400。
+- 正常流程：選資料夾 → nonce → `scan` 200 → `start` 200。同一個 nonce 拿去 `start` 第二次回 400；拿去配別的路徑也回 400。
+- 桌面祕密：沒帶或猜錯回 403，正確才發 nonce。
+- Zotero confirm：只會回伺服器自己偵測到的路徑；索引越界或型別錯誤回 400。
+- 資料夾掃描：別人可寫的子資料夾被跳過；符號連結打不開（`O_NOFOLLOW`）；fd 擁有者不符被拒絕。
+- 變異檢查 8 項全部被抓到：拿掉 nonce 檢查（重現測試失敗）、`start` 不用掉 nonce、nonce 不綁路徑、不驗桌面祕密、不驗子資料夾、不擋符號連結檔、不驗 fd 擁有者、不用 `O_NOFOLLOW`。
+- 數字：pytest **864 passed, 1 skipped**；node **228 / 228**（`tests/web/test_bulk_linked_import.cjs` 改為斷言 `scan` 與 `start` 都帶 nonce）。
+
 ## 驗證紀錄
 
 ### pytest
@@ -290,3 +321,6 @@ $ curl -s $U/api/library | grep -c '"token"'          → 0
    - `/p/{id}/pages/...?w=` 會產生縮圖。
    - `/api/engines?fresh=1` 會執行各 CLI 的 `--version`（現在只會執行可信路徑上的檔案）。
    - 另見第 2 點。
+10. 自動偵測到的 Zotero：拿到令牌的人也能呼叫 `/api/zotero/confirm`，所以**仍能匯入受害者自己的 Zotero 文獻庫**，再用 GET 讀走（範圍限於 Zotero 自己的檔案和它的附件）。更強的做法是確認時也彈出系統視窗，並預選偵測到的資料夾。這需要改 `folder_pick` 和 Electron 對話框（加 defaultPath），這次沒做。
+11. `link:true` 匯入的檔案之後會依路徑重新讀取（顯示、匯出）。匯入當下的 `O_NOFOLLOW` 檢查無法涵蓋之後的讀取。
+12. 瀏覽器版彈不出系統選資料夾視窗時（例如無桌面的 Linux），不能再成批匯入。

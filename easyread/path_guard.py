@@ -96,3 +96,25 @@ def mine_file(value) -> bool:
     except OSError:
         return False
     return st.st_uid == os.getuid() and not st.st_mode & stat.S_IWOTH and not in_untrusted_dir(str(value))
+
+
+def read_mine(value) -> bytes:
+    """匯入時讀檔：以 O_NOFOLLOW 開檔（最後一層是符號連結就失敗），再對「實際讀的那個 fd」fstat：
+    必須是一般檔案、屬於自己、別人不可寫。避免檢查完到讀取之間被換成指向別處的連結（TOCTOU）。"""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    fd = os.open(str(value), flags)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError("not a regular file")
+        if hasattr(os, "getuid") and (st.st_uid != os.getuid() or st.st_mode & stat.S_IWOTH):
+            raise ValueError("not owned by current user")
+        chunks = []
+        while True:
+            b = os.read(fd, 1 << 20)
+            if not b:
+                break
+            chunks.append(b)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)

@@ -1458,5 +1458,9 @@
  "链接导入只接受你家目录下的文件：{path}": "Linked import only accepts files under your home folder: {path}",
  "这个文件夹不属于你、其他用户能写入，或位于临时/共享文件夹，不能导入：{path}": "This folder is not yours, is writable by other users, or is in a temporary/shared folder, so it cannot be imported: {path}",
  "文件不属于你或位于临时/共享文件夹，已跳过：{path}": "Skipped a file that is not yours or is in a temporary/shared folder: {path}",
- "这个 Zotero 数据文件夹不属于你、其他用户能写入，或位于临时/共享文件夹，不能读取：{path}": "This Zotero data folder is not yours, is writable by other users, or is in a temporary/shared folder, so it cannot be read: {path}"
+ "这个 Zotero 数据文件夹不属于你、其他用户能写入，或位于临时/共享文件夹，不能读取：{path}": "This Zotero data folder is not yours, is writable by other users, or is in a temporary/shared folder, so it cannot be read: {path}",
+ "这台电脑弹不出选文件夹的窗口，没办法导入：为了安全，只接受在系统窗口里亲手选的文件夹": "This computer can't show a folder picker, so importing isn't available: for safety, only folders you pick yourself in the system window are accepted",
+ "请用“选择文件夹”重新选一次要导入的文件夹（只接受这次亲手选的文件夹）": "Please pick the folder to import again with the folder picker (only folders you picked yourself this session are accepted)",
+ "没有这个 Zotero 文件夹": "No such Zotero folder",
+ "找不到这个文件夹": "Folder not found"
 }

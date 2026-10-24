@@ -477,8 +477,7 @@ class BulkImportSourceTest(_ConfigTmp):
             snap = folder.read(str(src))
             got = {e.key: e for e in snap.entries}
             self.assertIsNotNone(got["ok.pdf"].pdf)
-            self.assertIsNone(got["leak.pdf"].pdf)
-            self.assertIn("已跳过", got["leak.pdf"].missing + "已跳过")
+            self.assertNotIn("leak.pdf", got)  # 符號連結（lstat）一律不收
             os.chmod(src, 0o777)
             with self.assertRaises(ValueError):
                 folder.read(str(src))
@@ -486,6 +485,30 @@ class BulkImportSourceTest(_ConfigTmp):
             with patch.object(os, "getuid", return_value=os.getuid() + 4242):
                 with self.assertRaises(ValueError):
                     folder.read(str(src))
+
+    def test_folder_walk_skips_writable_subtrees_and_reads_with_nofollow(self):
+        from easyread import path_guard
+        from easyread.bulk import folder
+        src = self.root / "mine3"
+        (src / "good").mkdir(parents=True)
+        (src / "shared").mkdir()
+        (src / "good" / "a.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+        (src / "shared" / "b.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+        os.chmod(src / "shared", 0o777)  # 自己的子資料夾但別人可寫：別人之後能放檔案
+        try:
+            with patch.object(path_guard, "_untrusted_roots", return_value=[]):
+                keys = {e.key for e in folder.read(str(src)).entries}
+                self.assertIn(os.path.join("good", "a.pdf"), keys)
+                self.assertNotIn(os.path.join("shared", "b.pdf"), keys)
+        finally:
+            os.chmod(src / "shared", 0o755)
+        link = src / "good" / "link.pdf"
+        link.symlink_to(src / "good" / "a.pdf")
+        with self.assertRaises(OSError):  # O_NOFOLLOW：最後一層是符號連結就打不開
+            path_guard.read_mine(link)
+        self.assertTrue(path_guard.read_mine(src / "good" / "a.pdf").startswith(b"%PDF"))
+        with patch.object(os, "getuid", return_value=os.getuid() + 4242), self.assertRaises(ValueError):  # 對 fd 檢查擁有者
+            path_guard.read_mine(src / "good" / "a.pdf")
 
     def test_zotero_linked_attachment_outside_refused(self):
         import sqlite3
@@ -685,6 +708,65 @@ class TokenTest(unittest.TestCase):
                 status, body = post_json(path, {"source": "folder", "path": str(Path(tmp) / "victim"), "link": True})
                 self.assertEqual(status, 400, (path, body))
         self.assertNotIn("attacker", json.dumps(config.load()))
+
+    # ---- 第四輪：成批匯入只接受這次親手選的資料夾（server/pick_grants.py） ----
+    def _post(self, path, obj, headers=None):
+        h = {"Content-Type": "application/json", "X-Token": self.app.token, **(headers or {})}
+        req = urllib.request.Request(self.url + path, data=json.dumps(obj).encode(), headers=h)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_repro_migrate_home_path_without_nonce_refused(self):
+        from easyread import path_guard
+        with tempfile.TemporaryDirectory() as tmp, patch.object(path_guard, "_untrusted_roots", return_value=[]):
+            home_like = Path(tmp) / "Documents"  # 受害者自己的資料夾：擁有者檢查會過，只能靠 nonce 擋
+            home_like.mkdir()
+            for path in ("/api/migrate/scan", "/api/migrate/start"):
+                for extra in ({}, {"nonce": "forged"}, {"nonce": ""}):
+                    status, body = self._post(path, {"source": "folder", "path": str(home_like), "link": True, **extra})
+                    self.assertEqual(status, 400, (path, extra, body))
+                    self.assertTrue(any(m in body["error"] for m in ("亲手选", "親手選", "picked yourself")), body)
+
+    def test_picker_nonce_flow_bound_to_path_and_one_time(self):
+        from easyread import path_guard
+        from easyread.app import folder_pick
+        with tempfile.TemporaryDirectory() as tmp, patch.object(path_guard, "_untrusted_roots", return_value=[]):
+            picked, other = Path(tmp) / "picked", Path(tmp) / "other"
+            picked.mkdir(); other.mkdir()
+            with patch.object(folder_pick, "pick", return_value=str(picked)):
+                status, r = self._post("/api/library/pick-folder", {"title": "x"})
+            self.assertEqual(status, 200)
+            nonce = r["nonce"]
+            self.assertEqual(self._post("/api/migrate/start", {"source": "folder", "path": str(other), "nonce": nonce})[0], 400)  # 綁定路徑
+            self.assertEqual(self._post("/api/migrate/scan", {"source": "folder", "path": str(picked), "nonce": nonce})[0], 200)
+            self.assertEqual(self._post("/api/migrate/start", {"source": "folder", "path": str(picked), "nonce": nonce})[0], 200)
+            for _ in range(100):
+                if self.app.bulk.status.get("state") != "running":
+                    break
+                threading.Event().wait(0.02)
+            self.assertEqual(self._post("/api/migrate/start", {"source": "folder", "path": str(picked), "nonce": nonce})[0], 400)  # 一次性
+
+    def test_desktop_grant_needs_secret(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._post("/api/pick/grant", {"path": tmp})[0], 403)
+            self.assertEqual(self._post("/api/pick/grant", {"path": tmp}, {"X-Desktop-Secret": "guess"})[0], 403)
+            with patch.object(self.app, "desktop_secret", "s3cret-from-electron"):
+                status, r = self._post("/api/pick/grant", {"path": tmp}, {"X-Desktop-Secret": "s3cret-from-electron"})
+            self.assertEqual(status, 200)
+            self.assertTrue(r["nonce"])
+
+    def test_zotero_confirm_only_server_detected_path(self):
+        from easyread.zotero import locate
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(locate, "candidates", return_value=[{"path": tmp}]):
+                status, r = self._post("/api/zotero/confirm", {"index": 0, "path": "/Users/victim/Documents"})
+                self.assertEqual((status, r["path"]), (200, tmp))  # 帶來的 path 被忽略
+                self.assertTrue(r["nonce"])
+                for bad in ({"index": 1}, {"index": "0"}, {"path": tmp}):
+                    self.assertEqual(self._post("/api/zotero/confirm", bad)[0], 400, bad)
 
     def test_frontend_no_longer_reads_token_from_json(self):
         bad = re.compile(r"\.token\s*=\s*(d|data|info|res|r)\.token|\)\)\.token|\.json\(\)\)\.token")
