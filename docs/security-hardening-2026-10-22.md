@@ -241,6 +241,18 @@ cookie 也要靠某個 GET 回應發下來，本機程式一樣拿得到，效�
   - **自動偵測的 Zotero**：`POST /api/zotero/confirm {"index": i}` 只能選「伺服器自己偵測到的第 i 個」，請求裡帶的路徑會被忽略。
 - 前端：`bulk-import.js` 改用 `PR.pickFolderGranted`；Zotero 自動偵測到的項目在讀取前先 confirm 換 nonce；`start` 之後清掉 nonce。
 
+### 4b 補強（自動審查指出）
+- **Zotero 附件根目錄（base）不收請求的**。原本 `/api/migrate/*` 會照收請求裡的 `base`，nonce 只核對 `path`，拿到令牌的人可以把 `attachments:` 相對路徑的附件導到任意根目錄。現在 base 改在發 nonce 時由伺服器決定，跟著 nonce 存：
+  - `/api/zotero/confirm`：用伺服器偵測到的那一筆的 base。
+  - 親手選的資料夾：若真實路徑等於某個偵測到的 Zotero 資料夾，就用那筆的 base，否則為空。
+  - 請求裡帶的 `base` 一律忽略。
+- **發 nonce 的選資料夾視窗，標題改由伺服器決定**。只有 `{"for": "import"}` 會發 nonce，視窗標題固定為「選擇要匯入 EasyRead 的資料夾（會把裡面的 PDF 匯入文獻庫）」，不用頁面帶來的標題，免得被偽裝成別的用途騙使用者點選。一般選資料夾（文獻庫位置、Obsidian）照舊可由頁面指定標題，但不會發 nonce。
+- 測試：
+  - 帶正確 nonce 加上 evil base 呼叫 `scan` / `start`，實際用到的仍是伺服器的 base（偵測到的那筆，或空字串）。
+  - 匯入用的視窗標題不含頁面給的字串；一般選資料夾不回 nonce。
+- 變異檢查 3 項都被抓到：`start` 改用請求的 base、`scan` 改用請求的 base、匯入視窗改用請求的標題。
+- 數字：pytest **866 passed, 1 skipped**；node **228 / 228**。
+
 ### 資料夾掃描與讀檔（`bulk/folder.py`、`path_guard.read_mine`、`bulk/runner.py`）
 - 每一層子資料夾都要通過 `trusted_path(leaf_mine=True)`，不通過就整棵跳過（例如屬於自己但別人可寫的子資料夾）。
 - 用 `lstat` 判斷檔案：符號連結和非一般檔案一律不收。

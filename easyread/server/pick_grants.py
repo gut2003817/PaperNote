@@ -8,6 +8,8 @@
 - 桌面版：Electron 主程序彈視窗，再用只有它知道的 EASYREAD_DESKTOP_SECRET 向後端換 nonce（/api/pick/grant）；
 - 自動偵測到的 Zotero 資料夾：POST /api/zotero/confirm 只能指定「伺服器自己偵測到的第幾個」，不能帶路徑。
 nonce 綁定真實路徑、30 分鐘有效，start 用掉就作廢（scan 不用掉，方便先看一眼）。
+Zotero 的“链接附件根目录”（base）也在發 nonce 時由伺服器決定、跟著 nonce 存，不接受請求帶來的 base
+（否則能把 attachments: 相對路徑的附件導到任意根目錄）。
 """
 from __future__ import annotations
 
@@ -30,30 +32,46 @@ def _real(path) -> str:
 class PickGrants:
     def __init__(self):
         self.lock = threading.Lock()
-        self.items: dict[str, tuple[str, float]] = {}
+        self.items: dict[str, tuple[str, float, str]] = {}
 
-    def issue(self, path: str) -> str:
+    def issue(self, path: str, base: str | None = None) -> str:
+        """base：Zotero 的附件根目錄；None 表示由伺服器自己找（偵測到的 Zotero 資料夾裡路徑相同的那個）。"""
         real = _real(path)
         if not real or not os.path.exists(real):
             return ""
+        if base is None:
+            base = zotero_base(real)
         nonce = secrets.token_urlsafe(18)
         with self.lock:
             now = time.monotonic()
             self.items = {k: v for k, v in self.items.items() if v[1] > now}
-            self.items[nonce] = (real, now + TTL)
+            self.items[nonce] = (real, now + TTL, str(base or ""))
         return nonce
 
-    def check(self, nonce, path, consume: bool = False) -> bool:
+    def check(self, nonce, path, consume: bool = False) -> str | None:
+        """合格回傳發 nonce 時存下的 base（可能是空字串），不合格回傳 None。"""
         if not isinstance(nonce, str) or not nonce:
-            return False
+            return None
         real = _real(path)
         with self.lock:
             hit = self.items.get(nonce)
             if not hit or hit[1] < time.monotonic() or not real or not hmac.compare_digest(hit[0], real):
-                return False
+                return None
             if consume:
                 del self.items[nonce]
-        return True
+        return hit[2]
+
+
+def zotero_base(real: str) -> str:
+    """伺服器自己偵測到的 Zotero 資料夾裡，真實路徑和 real 相同的那個的附件根目錄；沒有就空。"""
+    try:
+        from ..zotero import locate
+        for c in locate.candidates():
+            if _real(c.get("path")) == real:
+                return str(c.get("base") or "")
+    except Exception:  # noqa: BLE001  讀不到 Zotero 設定就當沒有
+        pass
+    return ""
 
 
 def of(app) -> PickGrants:

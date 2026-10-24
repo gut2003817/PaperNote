@@ -737,7 +737,7 @@ class TokenTest(unittest.TestCase):
             picked, other = Path(tmp) / "picked", Path(tmp) / "other"
             picked.mkdir(); other.mkdir()
             with patch.object(folder_pick, "pick", return_value=str(picked)):
-                status, r = self._post("/api/library/pick-folder", {"title": "x"})
+                status, r = self._post("/api/library/pick-folder", {"for": "import"})
             self.assertEqual(status, 200)
             nonce = r["nonce"]
             self.assertEqual(self._post("/api/migrate/start", {"source": "folder", "path": str(other), "nonce": nonce})[0], 400)  # 綁定路徑
@@ -748,6 +748,40 @@ class TokenTest(unittest.TestCase):
                     break
                 threading.Event().wait(0.02)
             self.assertEqual(self._post("/api/migrate/start", {"source": "folder", "path": str(picked), "nonce": nonce})[0], 400)  # 一次性
+
+    def test_picker_title_fixed_server_side_when_issuing_nonce(self):
+        from easyread.app import folder_pick
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(folder_pick, "pick", return_value=tmp) as pick:
+                status, r = self._post("/api/library/pick-folder", {"for": "import", "title": "選擇備份資料夾（安全）"})
+                self.assertEqual(status, 200)
+                self.assertTrue(r["nonce"])
+                title = pick.call_args[0][0]
+                self.assertNotIn("備份", title)  # 頁面給的標題不用
+                self.assertTrue(any(m in title for m in ("导入", "匯入", "import")), title)
+                status, r = self._post("/api/library/pick-folder", {"title": "選擇備份資料夾"})  # 一般選資料夾：不發授權
+                self.assertEqual(status, 200)
+                self.assertNotIn("nonce", r)
+
+    def test_zotero_base_comes_from_server_not_request(self):
+        from easyread.app import folder_pick
+        from easyread.bulk import runner
+        from easyread.zotero import locate
+        seen = []
+        fake_scan = lambda self_, source, where, base="": seen.append(("scan", base)) or {"ok": True}  # noqa: E731
+        fake_start = lambda self_, source, where, base="", **k: seen.append(("start", base)) or {"state": "idle"}  # noqa: E731
+        with tempfile.TemporaryDirectory() as tmp, patch.object(runner.Migration, "scan", fake_scan), \
+                patch.object(runner.Migration, "start", fake_start):
+            # 1) 自動偵測到的 Zotero：base 用伺服器偵測到的
+            with patch.object(locate, "candidates", return_value=[{"path": tmp, "base": "/Users/me/ZoteroLinked"}]):
+                nonce = self._post("/api/zotero/confirm", {"index": 0})[1]["nonce"]
+                self.assertEqual(self._post("/api/migrate/scan", {"source": "zotero", "path": tmp, "nonce": nonce, "base": "/"})[0], 200)
+                self.assertEqual(self._post("/api/migrate/start", {"source": "zotero", "path": tmp, "nonce": nonce, "base": "/etc"})[0], 200)
+            # 2) 自己選的資料夾、不是偵測到的 Zotero：base 為空，請求的 evil base 不用
+            with patch.object(locate, "candidates", return_value=[]), patch.object(folder_pick, "pick", return_value=tmp):
+                nonce = self._post("/api/library/pick-folder", {"for": "import"})[1]["nonce"]
+                self.assertEqual(self._post("/api/migrate/start", {"source": "zotero", "path": tmp, "nonce": nonce, "base": "/Users/victim"})[0], 200)
+        self.assertEqual(seen, [("scan", "/Users/me/ZoteroLinked"), ("start", "/Users/me/ZoteroLinked"), ("start", "")])
 
     def test_desktop_grant_needs_secret(self):
         with tempfile.TemporaryDirectory() as tmp:

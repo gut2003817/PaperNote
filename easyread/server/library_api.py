@@ -145,12 +145,16 @@ def post(app, path: str, body: dict):
     if path == "/api/library/pick-folder":  # 浏览器版：后端弹系统的选文件夹窗口
         from ..app.folder_pick import pick
         default = tr("选择 Obsidian 文件夹") if body.get("for") == "obsidian" else tr("选择放文献库的文件夹")
-        chosen = pick(str(body.get("title") or "")[:100] or default)  # 迁移 Zotero、导入文件夹也用它
-        out = {"supported": chosen is not None, "path": chosen or ""}
-        if chosen:  # 使用者親手選的：發一次性授權，成批匯入只認它（server/pick_grants.py）
-            from . import pick_grants
-            out["nonce"] = pick_grants.of(app).issue(chosen)
-        return out
+        # 會發匯入授權（nonce），所以視窗標題由伺服器決定、寫明“匯入”，不用請求帶來的標題（免得被偽裝成別的用途騙使用者點選）
+        if body.get("for") == "import":
+            chosen = pick(tr("选择要导入 EasyRead 的文件夹（会把里面的 PDF 导入文献库）"))
+            out = {"supported": chosen is not None, "path": chosen or ""}
+            if chosen:  # 使用者親手選的：發一次性授權，成批匯入只認它（server/pick_grants.py）
+                from . import pick_grants
+                out["nonce"] = pick_grants.of(app).issue(chosen)
+            return out
+        chosen = pick(str(body.get("title") or "")[:100] or default)  # 只回路徑、不發授權：標題照舊可由頁面指定
+        return {"supported": chosen is not None, "path": chosen or ""}
     if path == "/api/library/cleanup":
         return cloudlib.cleanup(body.get("path", ""), app.lib.root)
     if path == "/api/library/move":

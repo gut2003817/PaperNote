@@ -1462,5 +1462,6 @@
  "这台电脑弹不出选文件夹的窗口，没办法导入：为了安全，只接受在系统窗口里亲手选的文件夹": "This computer can't show a folder picker, so importing isn't available: for safety, only folders you pick yourself in the system window are accepted",
  "请用“选择文件夹”重新选一次要导入的文件夹（只接受这次亲手选的文件夹）": "Please pick the folder to import again with the folder picker (only folders you picked yourself this session are accepted)",
  "没有这个 Zotero 文件夹": "No such Zotero folder",
- "找不到这个文件夹": "Folder not found"
+ "找不到这个文件夹": "Folder not found",
+ "选择要导入 EasyRead 的文件夹（会把里面的 PDF 导入文献库）": "Choose a folder to import into EasyRead (its PDFs will be imported into the library)"
 }

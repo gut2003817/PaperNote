@@ -14,7 +14,8 @@
   PR.pickFolderGranted = async function (o) {
     const desktop = window.easyreadDesktop;
     if (desktop && desktop.pickFolderGranted) return (await desktop.pickFolderGranted()) || null;
-    const r = await PR.api("/api/library/pick-folder", { method: "POST", body: { title: o.title } }).catch(() => ({ supported: false }));
+    // for: "import"：後端用自己的固定標題彈窗並發 nonce（不收頁面給的標題）
+    const r = await PR.api("/api/library/pick-folder", { method: "POST", body: { for: "import" } }).catch(() => ({ supported: false }));
     if (r.supported && r.path && r.nonce) return { path: r.path, nonce: r.nonce };
     if (!r.supported || r.path === "") PR.toast(PR.t("这台电脑弹不出选文件夹的窗口，没办法导入：为了安全，只接受在系统窗口里亲手选的文件夹"), null, 8000);
     return null;
